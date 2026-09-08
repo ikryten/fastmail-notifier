@@ -142,7 +142,10 @@ function makeFetch(server) {
     server.requests.push({url, opts});
 
     const auth = (opts.headers || {}).Authorization;
-    if (auth !== 'Bearer ' + server.token) {
+    const accepted = server.tokens
+      ? server.tokens.some(t => auth === 'Bearer ' + t)
+      : auth === 'Bearer ' + server.token;
+    if (!accepted) {
       return {ok: false, status: 401, async json() { return {}; }, async text() { return 'No Authorization header'; }};
     }
 
@@ -158,6 +161,15 @@ function makeFetch(server) {
 
     const body = JSON.parse(opts.body);
     server.lastCall = body;
+
+    /* Mail is resolved per token when `unreadByToken` is set, so a request issued
+       under an old token keeps seeing that account's mail. Without this the fake
+       server hands every in-flight request the newest data, and a test cannot tell
+       a stale-account bug from a mere timing difference. */
+    const bearer = String(auth || '').replace(/^Bearer /, '');
+    const unread = server.unreadByToken
+      ? (server.unreadByToken[bearer] || [])
+      : server.unread;
     const responses = body.methodCalls.map(([name, args, tag]) => {
       if (name === 'Mailbox/get' && args.ids === null) {
         return ['Mailbox/get', {list: [
@@ -167,15 +179,15 @@ function makeFetch(server) {
         ]}, tag];
       }
       if (name === 'Mailbox/get') {
-        return ['Mailbox/get', {list: [{id: INBOX, unreadEmails: server.unread.length, totalEmails: 33855}]}, tag];
+        return ['Mailbox/get', {list: [{id: INBOX, unreadEmails: unread.length, totalEmails: 33855}]}, tag];
       }
       if (name === 'Email/query') {
         server.lastFilter = args.filter;
-        return ['Email/query', {ids: server.unread.map(e => e.id), total: server.unread.length}, tag];
+        return ['Email/query', {ids: unread.map(e => e.id), total: unread.length}, tag];
       }
       if (name === 'Email/get') {
         // Deliberately return them out of order: the client must re-impose query order.
-        return ['Email/get', {list: [...server.unread].reverse()}, tag];
+        return ['Email/get', {list: [...unread].reverse()}, tag];
       }
       if (name === 'Email/set') {
         server.sets.push(args.update);
@@ -223,7 +235,7 @@ function load(server, calls, opts) {
 
   sandbox.fetch = makeFetch(server);
   vm.createContext(sandbox);
-  const files = ['core/api.js', 'core/state.js', 'core/urls.js', 'core/jmap.js',
+  const files = ['core/api.js', 'core/state.js', 'core/urls.js', 'core/bodyparts.js', 'core/jmap.js',
                  'core/button.js', 'core/check.js', 'core/repeater.js'];
   if (opts && opts.worker) {
     files.push('worker.js');

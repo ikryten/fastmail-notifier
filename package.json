@@ -1,0 +1,12 @@
+{
+  "name": "fastmail-notifier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unread-mail notifier for Fastmail. Chrome + Firefox, MV3.",
+  "scripts": {
+    "test": "node test/run.js && node test/dom.js"
+  },
+  "devDependencies": {
+    "jsdom": "^27.0.0"
+  }
+}

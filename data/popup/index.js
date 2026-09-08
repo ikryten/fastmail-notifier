@@ -88,19 +88,6 @@ async function paint() {
 
 /* ---------- message body ---------- */
 
-function pickBody(email) {
-  const bv = email.bodyValues || {};
-  const html = (email.htmlBody || []).find(p => bv[p.partId]);
-  if (html) {
-    return {type: 'html', value: bv[html.partId].value};
-  }
-  const text = (email.textBody || []).find(p => bv[p.partId]);
-  if (text) {
-    return {type: 'text', value: bv[text.partId].value};
-  }
-  return {type: 'text', value: '(no readable body)'};
-}
-
 function escapeHtml(s) {
   return s.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 }
@@ -108,12 +95,24 @@ function escapeHtml(s) {
 /* The iframe is already unscriptable (no allow-scripts), so this is defence in
    depth rather than the only line: strip active content and javascript: URLs so
    nothing dangerous survives even if the sandbox attribute is ever loosened. */
-function sanitize(html) {
+function sanitize(html, allowRemote) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
+  let blocked = 0;
 
   doc.querySelectorAll(
     'script, iframe, object, embed, form, input, button, textarea, select, base, meta, link'
   ).forEach(n => n.remove());
+
+  // A <style> block can fetch remote URLs through CSS, so blocking images without
+  // blocking stylesheets would leave the hole open.
+  if (!allowRemote) {
+    doc.querySelectorAll('style').forEach(n => {
+      if (/url\s*\(/i.test(n.textContent || '')) {
+        blocked++;
+      }
+      n.remove();
+    });
+  }
 
   for (const el of doc.querySelectorAll('*')) {
     for (const attr of [...el.attributes]) {
@@ -121,14 +120,35 @@ function sanitize(html) {
       if (name.startsWith('on')) {
         el.removeAttribute(attr.name);
       }
+      // Never kept: it is a second source of remote URLs that safeSrc does not
+      // parse, and `src` alone is enough for a preview.
+      else if (name === 'srcset') {
+        if (!allowRemote) {
+          blocked++;
+        }
+        el.removeAttribute(attr.name);
+      }
       else if (name === 'src' && el.tagName === 'IMG') {
-        const safe = urls.safeSrc(attr.value);
+        const safe = urls.safeSrc(attr.value, allowRemote);
         if (safe) {
           el.setAttribute('src', safe);
         }
         else {
+          // Removed rather than left dangling, so the sender's alt text shows
+          // instead of an unexplained broken-image icon.
+          if (!allowRemote && /^\s*(https?:)?\/\//i.test(attr.value)) {
+            blocked++;
+          }
           el.removeAttribute('src');
         }
+      }
+      else if (name === 'style' && !allowRemote && /url\s*\(/i.test(attr.value)) {
+        blocked++;
+        el.removeAttribute(attr.name);
+      }
+      else if (name === 'background' && !allowRemote) {
+        blocked++;
+        el.removeAttribute(attr.name);
       }
       else if (/^(href|src|action|background|formaction)$/.test(name) &&
                /^\s*(javascript|vbscript|data:text\/html)/i.test(attr.value)) {
@@ -136,7 +156,7 @@ function sanitize(html) {
       }
     }
   }
-  return doc;
+  return {doc, blocked};
 }
 
 function downloadUrl(session, part) {
@@ -214,6 +234,8 @@ const FRAME_CSS = `
   pre { white-space: pre-wrap; overflow-wrap: break-word; }
   blockquote { margin: 0 0 0 12px; padding-left: 10px; border-left: 2px solid #dadce0; color: #5f6368; }
   a { color: #1a73e8; }
+  .fmc-blocked { margin: 0 0 12px; padding: 7px 10px; border-radius: 6px;
+                 background: #f1f3f4; color: #5f6368; font-size: 12px; }
 `;
 
 async function buildBody(id) {
@@ -226,16 +248,34 @@ async function buildBody(id) {
     throw new Error('Message not found');
   }
 
-  const picked = pickBody(email);
-  let inner;
+  const prefs = await state.prefs();
+  const allowRemote = prefs.loadRemoteImages !== false;
 
-  if (picked.type === 'html') {
-    const doc = sanitize(picked.value);
-    await inlineImages(doc, email);
-    inner = doc.body ? doc.body.innerHTML : '';
+  /* Each part is parsed and sanitised in isolation and only then concatenated.
+     Joining the raw values first would let one part's unclosed markup swallow the
+     next, which is both a rendering and a sanitisation hazard. */
+  const parts = bodyparts.select(email);
+  let inner = '';
+  let blocked = 0;
+
+  for (const part of parts) {
+    if (part.mime === 'text/html') {
+      const clean = sanitize(part.value, allowRemote);
+      blocked += clean.blocked;
+      await inlineImages(clean.doc, email);
+      inner += clean.doc.body ? clean.doc.body.innerHTML : '';
+    }
+    else {
+      inner += '<pre>' + escapeHtml(part.value) + '</pre>';
+    }
   }
-  else {
-    inner = '<pre>' + escapeHtml(picked.value) + '</pre>';
+
+  if (!inner) {
+    inner = '<pre>(no readable body)</pre>';
+  }
+  if (blocked) {
+    inner = '<p class="fmc-blocked">Remote content blocked (' + blocked +
+            '). Enable it in options to load images.</p>' + inner;
   }
 
   // base target=_blank plus allow-popups is what makes links work at all:

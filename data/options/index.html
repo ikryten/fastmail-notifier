@@ -148,6 +148,20 @@ footer { color: var(--muted); font-size: 12.5px; text-align: center; }
   </section>
 
   <section>
+    <h2>Message preview</h2>
+    <div class="check">
+      <input type="checkbox" id="loadRemoteImages">
+      <label for="loadRemoteImages" style="margin:0">Load remote images in previews</label>
+    </div>
+    <p class="hint">
+      On by default, so mail looks the way the sender intended. Turning it off means
+      opening a preview makes no request to the sender &mdash; no tracking pixels, no
+      IP address, no read receipt &mdash; at the cost of images and CSS backgrounds.
+      Inline attachments still display either way: those come from Fastmail, not the sender.
+    </p>
+  </section>
+
+  <section>
     <h2>Behaviour</h2>
     <div class="check">
       <input type="checkbox" id="openInNewTab">

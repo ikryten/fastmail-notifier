@@ -47,13 +47,25 @@ const check = {
     return {session, mailboxes};
   },
 
+  /* Set when a check is requested while one is already running. Module scope, so
+     it does not survive worker teardown -- acceptable, because the alarm rearm is
+     the durable backstop: losing a queued follow-up costs one poll period, not
+     correctness. Dropping the request outright is what was not acceptable, since
+     the reset fired by a token change is exactly such a request. */
+  pending: false,
+
   async execute(reason) {
     if (check.running) {
-      return console.log('[check] already running, ignoring', reason);
+      check.pending = true;
+      return console.log('[check] busy; queued follow-up for', reason);
     }
     check.running = true;
     try {
-      await check.run(reason);
+      do {
+        check.pending = false;
+        await check.run(reason);
+      }
+      while (check.pending);
     }
     catch (e) {
       // run() handles network and JMAP failures itself; anything reaching here is
@@ -70,6 +82,7 @@ const check = {
     console.log('[check] run:', reason);
 
     const token = await state.token();
+    const gen = await state.tokenGen();
     if (!token) {
       await state.clearResult();
       await button.loggedOut('No API token yet. Open options to add one.');
@@ -85,6 +98,16 @@ const check = {
     }
     catch (e) {
       return check.failed(e);
+    }
+
+    /* The token can be replaced or removed while the poll is in flight. Publishing
+       now would put a removed account's mail on the badge and in the popup, and
+       could notify about it -- visible until the next scheduled check. Guarding the
+       session cache (in connection()) is not enough on its own; the results have to
+       be dropped too. */
+    if (await state.tokenGen() !== gen) {
+      console.log('[check] token changed mid-poll, discarding results for', reason);
+      return;
     }
 
     const prefs = await state.prefs();

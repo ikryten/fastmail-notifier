@@ -13,6 +13,9 @@ self.state = {
     badgeColor: '#d93025',
     notifications: true,
     notifyVipOnly: false,
+    // Matches the rendering choice this extension was built around. Turning it off
+    // stops previews making any sender-controlled request.
+    loadRemoteImages: true,
     vips: [],                 // lowercase substrings matched against the From address
     openInNewTab: true
   },

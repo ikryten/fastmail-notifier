@@ -8,8 +8,12 @@ const FIELDS = {
   badgeColor: 'value',
   notifications: 'checked',
   notifyVipOnly: 'checked',
+  loadRemoteImages: 'checked',
   openInNewTab: 'checked'
 };
+
+// Guards against a second submission while the first is still in flight.
+let verifying = false;
 
 function say(el, text, cls) {
   el.textContent = text;
@@ -84,29 +88,45 @@ async function persist() {
 }
 
 $('save').addEventListener('click', async () => {
+  if (verifying) {
+    return;
+  }
   const token = $('token').value.trim();
   if (!token) {
     return say($('conn-status'), 'Paste a token first.', 'bad');
   }
 
+  verifying = true;
   $('save').disabled = true;
   say($('conn-status'), 'Checking with Fastmail…');
 
-  // Verified in the worker, which holds the host permissions, before we store it.
-  // A token that does not work should never make it into storage.
-  const res = await api.runtime.sendMessage({method: 'verify', token});
+  /* The button is re-enabled in `finally`. sendMessage can reject outright -- no
+     receiver, worker torn down mid-flight -- which is distinct from a well-formed
+     {ok: false} reply, and used to leave the button disabled for good with nothing
+     on screen to explain why. */
+  try {
+    // Verified in the worker, which holds the host permissions, before we store it.
+    // A token that does not work should never make it into storage.
+    const res = await api.runtime.sendMessage({method: 'verify', token});
 
-  $('save').disabled = false;
+    if (!res || !res.ok) {
+      return say($('conn-status'), (res && res.error) || 'Could not reach Fastmail.', 'bad');
+    }
 
-  if (!res || !res.ok) {
-    return say($('conn-status'), (res && res.error) || 'Could not reach Fastmail.', 'bad');
+    await state.setToken(token);
+    $('token').value = '';
+    await paintConnection();
+    say($('conn-status'), 'Connected as ' + res.username, 'ok');
+    api.runtime.sendMessage({method: 'check'});
   }
-
-  await state.setToken(token);
-  $('token').value = '';
-  await paintConnection();
-  say($('conn-status'), 'Connected as ' + res.username, 'ok');
-  api.runtime.sendMessage({method: 'check'});
+  catch (e) {
+    say($('conn-status'), 'Could not reach the extension: ' +
+        ((e && e.message) || 'unknown error'), 'bad');
+  }
+  finally {
+    verifying = false;
+    $('save').disabled = false;
+  }
 });
 
 $('replace').addEventListener('click', async () => {

@@ -362,6 +362,89 @@ console.log('\n17. review #5: a transient failure leaves a steady icon, not the 
   ok('the tooltip explains', calls.some(c => c[0] === 'title' && /Last check failed/.test(c[1])));
 }
 
+console.log('\n18. review #1: results belonging to a superseded token are discarded');
+{
+  // Each token sees its own account's mail, so a stale publish is unmistakable.
+  const server = {
+    token: 'A', tokens: ['A', 'B'], requests: [], sets: [], unread: [],
+    unreadByToken: {A: [], B: []}
+  };
+  const calls = [];
+  const ctx = load(server, calls, {worker: true});
+  await ctx.state.setToken('A');
+  await settle(ctx);
+
+  // Hold the next poll open midway.
+  let release;
+  const gate = new Promise(r => (release = r));
+  let gated = false;
+  const realFetch = ctx.fetch;
+  ctx.fetch = async (url, opts) => {
+    if (opts && opts.method === 'POST' && !gated) {
+      gated = true;
+      await gate;
+    }
+    return realFetch(url, opts);
+  };
+
+  server.unreadByToken.A = [email('SECRET', 'a@x.com', 'token A mail', 0)];
+  const inflight = ctx.check.execute('poll-A');
+  await new Promise(r => setTimeout(r, 5));      // let it reach the gate
+
+  // Token replaced while that poll is in flight. Token A stays valid server-side,
+  // so the old request will still succeed -- which is the dangerous case.
+  server.unreadByToken.B = [email('BMAIL', 'b@x.com', 'token B mail', 0)];
+  await ctx.state.setToken('B');
+  release();
+  await inflight;
+  await settle(ctx);
+
+  const subjects = (await ctx.state.messages()).map(m => m.subject);
+  ok('the removed account’s mail was never published',
+     !subjects.includes('token A mail'), 'published: ' + JSON.stringify(subjects));
+  ok('no notification fired for the removed account',
+     !calls.some(c => c[0] === 'notify' && /token A mail/.test(c[3])),
+     'notifications: ' + JSON.stringify(calls.filter(c => c[0] === 'notify')));
+
+  // The reset fired by the token change must not have been swallowed.
+  ok('a follow-up check ran for the current token',
+     server.requests.some(r => (r.opts.headers || {}).Authorization === 'Bearer B'));
+  ok('and it published the current account’s mail',
+     subjects.includes('token B mail'), 'published: ' + JSON.stringify(subjects));
+}
+
+console.log('\n19. review #2: every body part is selected, in order');
+{
+  const ctx = load({token: 'good', unread: [], requests: [], sets: []}, []);
+  const sel = ctx.bodyparts.select;
+
+  const email3 = {
+    htmlBody: [{partId: '1', type: 'text/html'}, {partId: '2', type: 'text/html'},
+               {partId: '3', type: 'text/html'}],
+    bodyValues: {1: {value: '<p>one</p>'}, 2: {value: '<p>two</p>'}, 3: {value: '<p>three</p>'}}
+  };
+  eq('all HTML parts, in declared order',
+     sel(email3).map(p => p.value), ['<p>one</p>', '<p>two</p>', '<p>three</p>']);
+
+  eq('a part missing its bodyValues entry does not lose the ones after it',
+     sel({htmlBody: [{partId: '1'}, {partId: 'gone'}, {partId: '3'}],
+          bodyValues: {1: {value: 'a'}, 3: {value: 'c'}}}).map(p => p.value), ['a', 'c']);
+
+  eq('each part carries its own type, not the list’s',
+     sel({htmlBody: [{partId: '1', type: 'text/plain'}, {partId: '2', type: 'text/html'}],
+          bodyValues: {1: {value: 'plain'}, 2: {value: '<b>rich</b>'}}}).map(p => p.mime),
+     ['text/plain', 'text/html']);
+
+  eq('falls back to every text part when no HTML part has a value',
+     sel({htmlBody: [{partId: 'missing'}],
+          textBody: [{partId: 't1'}, {partId: 't2'}],
+          bodyValues: {t1: {value: 'first'}, t2: {value: 'second'}}}).map(p => p.value),
+     ['first', 'second']);
+
+  eq('nothing displayable yields nothing', sel({bodyValues: {}}), []);
+  eq('a missing email is tolerated', sel(null), []);
+}
+
 }
 
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');

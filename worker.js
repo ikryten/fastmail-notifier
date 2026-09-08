@@ -178,7 +178,25 @@ api.runtime.onMessage.addListener((request, sender, respond) => {
   return true; // keep the channel open for the async reply
 });
 
-// The worker may have been woken for something unrelated, so restore the
-// popup from the last known count rather than assuming zero.
-state.count().then(c => syncPopup(c === state.UNAUTHENTICATED ? 0 : c));
+/* Restore the visible state from storage on every worker start.
+
+   The new-mail flash is undone by a setTimeout, which an MV3 service worker is
+   free to kill before it runs; without this, a stranded flash icon would persist
+   until the next successful poll. Rendering from persisted state on each wake
+   makes that self-healing. A sub-30s alarm is not an option here -- Chrome clamps
+   those in packaged extensions. */
+(async () => {
+  const count = await state.count();
+  await syncPopup(count === state.UNAUTHENTICATED ? 0 : count);
+  if (count === state.UNAUTHENTICATED) {
+    return;   // leave the logged-out badge alone
+  }
+  const session = await state.session();
+  await button.render({
+    count,
+    username: (session && session.username) || '',
+    prefs: await state.prefs(),
+    flash: false
+  });
+})();
 repeater.build('worker-start');

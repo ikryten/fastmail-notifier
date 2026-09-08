@@ -112,6 +112,19 @@ time to. Reloading also clears `chrome.storage.session`, so the badge may flash 
 `!` while it re-bootstraps the session from the token; the token is in `storage.local` and
 survives.
 
+## Privacy: remote images
+
+Previews load remote images by default, so mail looks the way the sender intended. That
+means opening one can fire a tracking pixel. **Options → Message preview → Load remote
+images** turns it off, after which a preview makes no request to the sender at all:
+`src`, `srcset`, `<style>` blocks and inline `style` declarations containing `url()` are
+all stripped, since CSS can fetch remote URLs just as readily as an `<img>`. Blocked
+images have their `src` removed rather than left dangling, so the sender's alt text shows
+instead of a broken icon, and a one-line notice explains what happened.
+
+Inline `cid:` attachments still display either way — those come from Fastmail over an
+authenticated request, not from the sender's server.
+
 ## Design notes
 
 - **One round trip per poll.** `Mailbox/get` + `Email/query` + `Email/get` go in a
@@ -122,6 +135,15 @@ survives.
   have custom folders.
 - **Never hardcode the API host.** The session object returns a region-specific
   `apiUrl` (e.g. `phl.api.fastmail.com`).
+- **Body parts are rendered in order, each sanitised in isolation.** RFC 8621 defines
+  `htmlBody`/`textBody` as ordered *lists* of parts to display in sequence, so taking only
+  the first silently drops content. `core/bodyparts.js` selects them; the popup sanitises
+  each part separately, because joining raw values first would let one part's unclosed
+  markup swallow the next.
+- **A poll's results are discarded if the token changed while it was in flight.**
+  Guarding the session cache is not enough on its own: without also re-checking the
+  generation before publishing, a removed account's mail could reach the badge, the popup
+  and a notification, and stay there until the next poll.
 - **Cached session data is stamped with a token generation.** Changing the token bumps a
   counter; a bootstrap already in flight will not publish its result if the counter moved
   underneath it. Without this, replacing the token mid-poll could pair the new token with
@@ -149,10 +171,16 @@ survives.
 ## Tests
 
 ```
-node test/run.js
+node test/run.js     # core logic, no dependencies
+node test/dom.js     # popup + options against a real DOM (needs: npm install)
+npm test             # both
 ```
 
-Runs the real `core/` modules against a mocked extension API and a mocked Fastmail —
+The core suite deliberately needs **nothing installed** — a clean checkout and `node` are
+enough. Only the DOM suite depends on jsdom, and it is a dev dependency: the extension
+itself still ships with no dependencies and no build step.
+
+`test/run.js` runs the real `core/` modules against a mocked extension API and a mocked Fastmail —
 no token, no network. **Every test runs twice**, once against a simulated Chrome and once
 against a simulated Firefox that exposes only `browser` and rejects the
 NotificationOptions Firefox does not implement. That is what makes the Firefox port

@@ -173,6 +173,27 @@ console.log('\n10. deep links into the Fastmail web app');
      ctx.jmap.webUrl(session, 'a/b c'), BASE + 'a%2Fb%20c?u=1a2b3c4d');
 }
 
+console.log('\n11. image src normalisation');
+{
+  const ctx = load({token: 'good', unread: [], requests: [], sets: []}, []);
+  const f = ctx.urls.safeSrc;
+
+  eq('absolute https passes through', f('https://claude.ai/a.png'), 'https://claude.ai/a.png');
+  eq('absolute http passes through', f('http://x.com/a.png'), 'http://x.com/a.png');
+  eq('protocol-relative gets https, not the extension origin',
+     f('//cdn.example.com/logo.png'), 'https://cdn.example.com/logo.png');
+  eq('cid: passes through for the inline resolver', f('cid:abc@x'), 'cid:abc@x');
+  eq('inline data image passes through',
+     f('data:image/png;base64,iVBOR'), 'data:image/png;base64,iVBOR');
+  eq('relative path is dropped (unresolvable in a srcdoc frame)', f('images/logo.png'), null);
+  eq('root-relative path is dropped', f('/logo.png'), null);
+  eq('javascript: is dropped', f('javascript:alert(1)'), null);
+  eq('data:text/html is dropped', f('data:text/html,<script>'), null);
+  eq('whitespace-obfuscated javascript: is dropped', f('  javascript:alert(1)'), null);
+  eq('empty is dropped', f(''), null);
+  eq('null is dropped', f(null), null);
+}
+
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');
 process.exit(fail ? 1 : 0);
 })();

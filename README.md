@@ -49,6 +49,14 @@ ignores the key rather than refusing to load, and specifying both is MDN's docum
 cross-browser MV3 pattern. Leave it: removing it would silence the warning at the cost of
 breaking the Firefox port before it starts.
 
+**Some senders' images show as broken icons.** Not a bug in the extension. A few
+origins serve their images with `Cross-Origin-Resource-Policy: same-origin`, which
+forbids *any* cross-origin document from loading them; Chrome reports
+`net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin`. Anthropic's `claude.ai` email assets are
+one such case. Fastmail's own web UI displays them only because webmail proxies remote
+images server-side, where CORP does not apply. Nothing client-side can make a direct
+load succeed.
+
 **Changes don't appear after editing a file.** Chrome does not hot-reload unpacked
 extensions. Hit the reload arrow on the extension's card in `chrome://extensions` after
 any edit. Nothing in the UI indicates it is running stale code, so this is easy to lose

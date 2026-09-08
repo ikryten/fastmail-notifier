@@ -147,7 +147,7 @@ function load(server, calls) {
   sandbox.chrome = buildChrome(calls);
   sandbox.fetch = makeFetch(server);
   vm.createContext(sandbox);
-  for (const f of ['core/state.js', 'core/jmap.js', 'core/button.js', 'core/check.js', 'core/repeater.js']) {
+  for (const f of ['core/state.js', 'core/urls.js', 'core/jmap.js', 'core/button.js', 'core/check.js', 'core/repeater.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, {filename: f});
   }
   return sandbox;

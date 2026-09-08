@@ -121,6 +121,15 @@ function sanitize(html) {
       if (name.startsWith('on')) {
         el.removeAttribute(attr.name);
       }
+      else if (name === 'src' && el.tagName === 'IMG') {
+        const safe = urls.safeSrc(attr.value);
+        if (safe) {
+          el.setAttribute('src', safe);
+        }
+        else {
+          el.removeAttribute('src');
+        }
+      }
       else if (/^(href|src|action|background|formaction)$/.test(name) &&
                /^\s*(javascript|vbscript|data:text\/html)/i.test(attr.value)) {
         el.removeAttribute(attr.name);
@@ -145,18 +154,22 @@ const MAX_INLINE = 2 * 1024 * 1024;
    origin-scoped so the opaque-origin frame cannot read ours either -- which
    leaves data: URLs as the way to get inline images in front of the user. */
 async function inlineImages(doc, email) {
+  // Driven by the images present, not by the attachment list: an email can
+  // reference a cid: that has no matching part, and leaving that src in place
+  // yields a broken-image icon instead of the alt text the sender wrote.
+  const imgs = [...doc.querySelectorAll('img[src^="cid:"]')];
+  if (!imgs.length) {
+    return;
+  }
+
   const byCid = new Map();
   for (const a of email.attachments || []) {
     if (a.cid && a.blobId) {
       byCid.set(a.cid, a);
     }
   }
-  if (!byCid.size) {
-    return;
-  }
 
   const token = await state.token();
-  const imgs = [...doc.querySelectorAll('img[src^="cid:"]')];
 
   await Promise.all(imgs.map(async img => {
     const cid = img.getAttribute('src').slice(4).replace(/^<|>$/g, '');

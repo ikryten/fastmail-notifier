@@ -168,6 +168,27 @@ const jmap = {
     };
   },
 
+  WEBMAIL: 'https://app.fastmail.com/mail/Inbox/',
+
+  /* Deep link to one message in the Fastmail web app.
+
+     Verified against the live app: /mail/Inbox/<emailId> opens the message, and
+     Fastmail canonicalises the URL to <threadId>.<emailId> on its own -- so the
+     email id alone is enough. An id it does not recognise degrades to the folder
+     view rather than erroring, which makes this safe to attempt unconditionally.
+
+     The ?u= key is the JMAP accountId minus its leading "u"
+     (accountId "u1a2b3c4d" <-> "?u=1a2b3c4d"). Appended only when the accountId
+     actually has that shape, so an unexpected id format cannot produce a bad param. */
+  webUrl(session, emailId) {
+    if (!emailId) {
+      return jmap.WEBMAIL;
+    }
+    const url = jmap.WEBMAIL + encodeURIComponent(emailId);
+    const m = /^u([0-9a-f]+)$/i.exec((session && session.accountId) || '');
+    return m ? url + '?u=' + m[1] : url;
+  },
+
   summarise(e) {
     const from = (e.from && e.from[0]) || {};
     return {

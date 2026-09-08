@@ -155,6 +155,24 @@ console.log('\n9. badge formatting');
   eq('large counts compacted', ctx.button.format(33855), '34K');
 }
 
+console.log('\n10. deep links into the Fastmail web app');
+{
+  const ctx = load({token: 'good', unread: [], requests: [], sets: []}, []);
+  const session = {accountId: 'u1a2b3c4d'};
+  const BASE = 'https://app.fastmail.com/mail/Inbox/';
+
+  eq('no id -> plain inbox (what the Inbox button sends)',
+     ctx.jmap.webUrl(session, null), BASE);
+  eq('id -> deep link, ?u= key derived from the accountId',
+     ctx.jmap.webUrl(session, 'Stmo9PwS3weB'), BASE + 'Stmo9PwS3weB?u=1a2b3c4d');
+  eq('unexpected accountId shape -> omit ?u= rather than emit a wrong one',
+     ctx.jmap.webUrl({accountId: 'A13824'}, 'Stmo9PwS3weB'), BASE + 'Stmo9PwS3weB');
+  eq('a missing session is tolerated',
+     ctx.jmap.webUrl(null, 'Stmo9PwS3weB'), BASE + 'Stmo9PwS3weB');
+  eq('ids are percent-encoded',
+     ctx.jmap.webUrl(session, 'a/b c'), BASE + 'a%2Fb%20c?u=1a2b3c4d');
+}
+
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');
 process.exit(fail ? 1 : 0);
 })();

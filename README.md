@@ -55,6 +55,11 @@ effect.
 - **The message body iframe cannot script.** `sandbox` omits both `allow-scripts`
   and `allow-same-origin`, so sender HTML gets an opaque origin and no reach into
   the token or `chrome.*`. Links work via `<base target="_blank">` + `allow-popups`.
+- **Deep links need only the email id.** `/mail/Inbox/<emailId>` opens a message and
+  Fastmail canonicalises the URL to `<threadId>.<emailId>` itself. An id it does not
+  recognise degrades to the folder view rather than erroring, so the link is always safe
+  to attempt. The `?u=` account key is the JMAP `accountId` minus its leading `u`
+  (`u1a2b3c4d` ↔ `?u=1a2b3c4d`), and is omitted when the accountId has some other shape.
 - **Inline `cid:` images become `data:` URLs.** They live behind an authenticated
   `downloadUrl`, and a sandboxed `<img>` cannot send a Bearer header — while
   `blob:` URLs are origin-scoped and unreadable from an opaque origin.

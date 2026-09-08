@@ -38,7 +38,7 @@ function paintChrome() {
   $('counter').textContent = n ? (view.index + 1) + ' of ' + n : '';
   $('prev').disabled = view.index <= 0;
   $('next').disabled = view.index >= n - 1;
-  for (const id of ['read', 'trash']) {
+  for (const id of ['read', 'trash', 'open']) {
     $(id).disabled = !n;
   }
 }
@@ -282,7 +282,15 @@ $('next').addEventListener('click', () => move(1));
 $('read').addEventListener('click', e => act(e.currentTarget, 'markRead'));
 $('trash').addEventListener('click', e => act(e.currentTarget, 'trash'));
 $('open').addEventListener('click', () => {
-  chrome.runtime.sendMessage({method: 'open'});
+  // Deep link to whatever is on screen; the worker falls back to the inbox
+  // when there is nothing selected.
+  const m = view.messages[view.index];
+  chrome.runtime.sendMessage({method: 'open', id: m ? m.id : null});
+  window.close();
+});
+$('inbox').addEventListener('click', () => {
+  // No id, so jmap.webUrl falls back to the plain inbox URL.
+  chrome.runtime.sendMessage({method: 'open', id: null});
   window.close();
 });
 $('settings').addEventListener('click', () => {

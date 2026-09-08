@@ -16,8 +16,6 @@ if (typeof importScripts !== 'undefined') {
   );
 }
 
-const WEBMAIL = 'https://app.fastmail.com/mail/Inbox/';
-
 /* The popup only exists when it has something to show. With nothing unread,
    detaching it makes a click open the webmail instead of an empty window --
    the same trick ignotifier uses, and it is a genuinely nice bit of UX. */
@@ -37,14 +35,16 @@ chrome.storage.session.onChanged.addListener(changes => {
   }
 });
 
-async function openWebmail() {
+async function openWebmail(emailId) {
+  const session = await state.session();
+  const url = jmap.webUrl(session, emailId);
   const prefs = await state.prefs();
   if (prefs.openInNewTab) {
-    await chrome.tabs.create({url: WEBMAIL});
+    await chrome.tabs.create({url});
   }
   else {
     const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-    await chrome.tabs.update(tab.id, {url: WEBMAIL});
+    await chrome.tabs.update(tab.id, {url});
   }
 }
 
@@ -62,7 +62,7 @@ chrome.notifications.onClicked.addListener(async id => {
     return;
   }
   chrome.notifications.clear(id);
-  await openWebmail();
+  await openWebmail(id.slice(4));
 });
 
 chrome.alarms.onAlarm.addListener(async alarm => {
@@ -142,8 +142,8 @@ const handlers = {
     return {ok: true};
   },
 
-  async open() {
-    await openWebmail();
+  async open({id}) {
+    await openWebmail(id);
     return {ok: true};
   },
 

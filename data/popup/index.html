@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fastmail Checker</title>
+<link rel="stylesheet" href="index.css">
+</head>
+<body>
+<header>
+  <span id="account" title=""></span>
+  <span class="spacer"></span>
+  <span id="counter"></span>
+  <button id="prev" class="nav" title="Previous (←)" disabled>&#8249;</button>
+  <button id="next" class="nav" title="Next (→)" disabled>&#8250;</button>
+</header>
+
+<section id="meta">
+  <div id="subject"></div>
+  <div class="line">
+    <span id="from"></span>
+    <span id="date"></span>
+  </div>
+</section>
+
+<div id="stage">
+  <!-- Opaque origin, no scripting: allow-scripts and allow-same-origin are both
+       deliberately absent, so sender HTML cannot reach the token or chrome.*.
+       allow-popups lets target=_blank links still open normally. -->
+  <iframe id="body" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>
+  <div id="overlay"></div>
+</div>
+
+<footer>
+  <button id="read" title="Mark as read (Shift+I)">Mark read</button>
+  <button id="trash" title="Move to Trash (#)">Trash</button>
+  <span class="spacer"></span>
+  <button id="open" class="ghost" title="Open Fastmail">Fastmail</button>
+  <button id="refresh" class="ghost" title="Check now">&#8635;</button>
+  <button id="settings" class="ghost" title="Options">&#9881;</button>
+</footer>
+
+<script src="/core/state.js"></script>
+<script src="index.js"></script>
+</body>
+</html>

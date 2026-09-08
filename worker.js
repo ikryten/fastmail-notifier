@@ -106,27 +106,32 @@ const handlers = {
     return {ok: true, username: session.username, accountId: session.accountId};
   },
 
-  async body({id}) {
+  /* The worker may have been torn down and restarted since the popup opened, so
+     never assume the cached session survived -- check.connection re-bootstraps
+     it if needed. */
+  async connected() {
     const token = await state.token();
-    const session = await state.session();
-    if (!token || !session) {
-      throw jmap.err('auth', 'Not connected');
+    if (!token) {
+      throw jmap.err('auth', 'No API token set');
     }
+    const {session, mailboxes} = await check.connection(token);
+    return {token, session, mailboxes};
+  },
+
+  async body({id}) {
+    const {token, session} = await handlers.connected();
     return {ok: true, email: await jmap.body(token, session, id)};
   },
 
   async markRead({ids}) {
-    const token = await state.token();
-    const session = await state.session();
+    const {token, session} = await handlers.connected();
     await jmap.markRead(token, session, ids);
     await repeater.reset('mark-read', 400);
     return {ok: true};
   },
 
   async trash({ids}) {
-    const token = await state.token();
-    const session = await state.session();
-    const mailboxes = await state.mailboxes();
+    const {token, session, mailboxes} = await handlers.connected();
     await jmap.trash(token, session, mailboxes, ids);
     await repeater.reset('trash', 400);
     return {ok: true};
@@ -153,7 +158,9 @@ const handlers = {
 };
 
 chrome.runtime.onMessage.addListener((request, sender, respond) => {
-  const handler = handlers[request && request.method];
+  const method = request && request.method;
+  // `connected` is an internal helper that happens to live on this object.
+  const handler = method && method !== 'connected' ? handlers[method] : null;
   if (!handler) {
     return false;
   }

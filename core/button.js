@@ -44,12 +44,13 @@ const button = {
     await chrome.action.setTitle({title: text});
   },
 
-  /* Counts above 999 would overflow the badge, so compact them the way
-     the platform does elsewhere: 1.2K. */
+  /* A Chrome badge fits about four characters, so counts above 999 are
+     compacted with no fraction digit: 33855 -> "34K", not "33.9K" (5 chars,
+     which the badge silently truncates). */
   format(n) {
     if (n > 999) {
       return new Intl.NumberFormat(undefined, {
-        notation: 'compact', maximumFractionDigits: 1
+        notation: 'compact', maximumFractionDigits: 0
       }).format(n);
     }
     return String(n);

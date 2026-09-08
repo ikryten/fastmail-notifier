@@ -39,6 +39,23 @@ the machine is ever compromised you can
 [revoke it](https://app.fastmail.com/settings/security/tokens) with immediate
 effect.
 
+## Two things that look like problems but aren't
+
+**Chrome warns: `'background.scripts' requires manifest version of 2 or lower`.**
+Expected, and the manifest is correct. Firefox does not support
+`background.service_worker` at all ([bug 1573659](https://bugzil.la/1573659)), so
+`background.scripts` is the only way it can run an MV3 background script. Chrome 121+
+ignores the key rather than refusing to load, and specifying both is MDN's documented
+cross-browser MV3 pattern. Leave it: removing it would silence the warning at the cost of
+breaking the Firefox port before it starts.
+
+**Changes don't appear after editing a file.** Chrome does not hot-reload unpacked
+extensions. Hit the reload arrow on the extension's card in `chrome://extensions` after
+any edit. Nothing in the UI indicates it is running stale code, so this is easy to lose
+time to. Reloading also clears `chrome.storage.session`, so the badge may flash an amber
+`!` while it re-bootstraps the session from the token; the token is in `storage.local` and
+survives.
+
 ## Design notes
 
 - **One round trip per poll.** `Mailbox/get` + `Email/query` + `Email/get` go in a

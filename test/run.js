@@ -445,6 +445,51 @@ console.log('\n19. review #2: every body part is selected, in order');
   eq('a missing email is tolerated', sel(null), []);
 }
 
+console.log('\n20. a dead token must still lead to Options');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  const calls = [];
+  const ctx = load(server, calls, {worker: true});
+
+  await ctx.__api.runtime.onInstalled._fire();
+  const menu = ctx.__api.contextMenus._items['fmc-options'];
+
+  if (mode === 'firefox') {
+    ok('Firefox: an Options item is added, since Gecko provides none', Boolean(menu),
+       'items: ' + JSON.stringify(Object.keys(ctx.__api.contextMenus._items)));
+    eq('on the action context, the MV3 spelling Firefox accepts',
+       menu && menu.contexts, ['action']);
+
+    calls.length = 0;
+    await ctx.__api.contextMenus.onClicked._fire({menuItemId: 'fmc-options'});
+    ok('choosing it opens the options page', calls.some(c => c[0] === 'options'));
+
+    // Chrome persists menus across worker restarts and rejects a duplicate id;
+    // a Firefox event page loses them each session. removeAll-then-create suits both.
+    await ctx.__api.runtime.onStartup._fire();
+    eq('rebuilding leaves exactly one item',
+       Object.keys(ctx.__api.contextMenus._items), ['fmc-options']);
+  }
+  else {
+    // Chrome adds its own Options entry for any extension declaring options_ui.
+    ok('Chrome: no item is added, so Options is not duplicated', !menu,
+       'items: ' + JSON.stringify(Object.keys(ctx.__api.contextMenus._items)));
+  }
+
+  // A token Fastmail has rejected is still *stored*, so the old guard passed it
+  // through to webmail and stranded the user.
+  await ctx.__api.storage.local.set({token: 'revoked'});
+  await ctx.state.clearResult();
+  await settle(ctx);
+  calls.length = 0;
+  await ctx.__api.action.onClicked._fire();
+  ok('clicking a dead-token button opens Options', calls.some(c => c[0] === 'options'),
+     'calls: ' + JSON.stringify(calls));
+  ok('and does not open webmail instead',
+     !calls.some(c => c[0] === 'tab' && /app\.fastmail\.com/.test(c[1])),
+     'calls: ' + JSON.stringify(calls));
+}
+
 }
 
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');

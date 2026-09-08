@@ -112,6 +112,18 @@ time to. Reloading also clears `chrome.storage.session`, so the badge may flash 
 `!` while it re-bootstraps the session from the token; the token is in `storage.local` and
 survives.
 
+## Getting back to Options when the token dies
+
+If Fastmail revokes or disables the token, the extension is authenticated no more but the
+token is still *stored* — so a naive "have we got a token?" check passes and clicking the
+toolbar button would open webmail, which is no help at all. The button now opens Options
+whenever the last check came back unauthenticated.
+
+Firefox additionally gets an **Options** item on the toolbar button's context menu.
+Chrome adds one of those itself for any extension declaring `options_ui`; Firefox does
+not, so the item is created only on Gecko — detected with `runtime.getBrowserInfo`, a
+Firefox-only API, rather than by sniffing the user agent.
+
 ## Privacy: remote images
 
 Previews load remote images by default, so mail looks the way the sender intended. That

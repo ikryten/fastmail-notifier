@@ -49,10 +49,49 @@ async function openWebmail(emailId) {
   }
 }
 
+/* A route to Options from the toolbar button that works even when the popup is
+   detached -- which is exactly the state a revoked token leaves you in.
+
+   Firefox only. Chrome already adds its own "Options" entry to the action context
+   menu for any extension declaring options_ui, so adding ours there would just
+   duplicate it.
+
+   Rebuilt rather than created blind: Chrome persists menus across worker restarts
+   and rejects a duplicate id, while a Firefox event page loses them each browser
+   session. removeAll-then-create is idempotent in both. `contexts: ['action']` is
+   the MV3 spelling and is supported by Firefox too ('browser_action' was the MV2
+   name). */
+async function buildMenu() {
+  if (!IS_GECKO) {
+    return;
+  }
+  try {
+    await api.contextMenus.removeAll();
+    await api.contextMenus.create({
+      id: 'fmc-options',
+      title: 'Options',
+      contexts: ['action']
+    });
+  }
+  catch (e) {
+    console.warn('[worker] could not build the context menu', e);
+  }
+}
+
+api.contextMenus.onClicked.addListener(info => {
+  if (info.menuItemId === 'fmc-options') {
+    api.runtime.openOptionsPage();
+  }
+});
+
 /* Only fires when the popup is detached, i.e. nothing unread or not connected. */
 api.action.onClicked.addListener(async () => {
   const token = await state.token();
-  if (!token) {
+  const count = await state.count();
+  /* A stored token that Fastmail has since rejected is worse than no token at
+     all: the popup is detached, so without this the click opens webmail and
+     leaves no route back to Options short of the extensions page. */
+  if (!token || count === state.UNAUTHENTICATED) {
     return api.runtime.openOptionsPage();
   }
   await openWebmail();
@@ -81,8 +120,8 @@ api.alarms.onAlarm.addListener(async alarm => {
   }
 });
 
-api.runtime.onStartup.addListener(() => repeater.reset('startup'));
-api.runtime.onInstalled.addListener(() => repeater.reset('installed'));
+api.runtime.onStartup.addListener(() => { buildMenu(); return repeater.reset('startup'); });
+api.runtime.onInstalled.addListener(() => { buildMenu(); return repeater.reset('installed'); });
 
 /* Coming back to the machine is a good moment to refresh. */
 api.idle.setDetectionInterval(300);

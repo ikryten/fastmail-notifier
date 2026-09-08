@@ -117,19 +117,31 @@ function buildChrome(calls) {
       async getAll() { return Object.values(this._alarms); },
       onAlarm: mkEvent()
     },
+    contextMenus: {
+      _items: {},
+      async removeAll() { this._items = {}; },
+      async create(o) { this._items[o.id] = o; calls.push(['menu', o.id, o.title]); },
+      onClicked: mkEvent()
+    },
     runtime: {
       getURL: p => 'chrome-extension://test' + p,
       // Read the real manifest rather than a literal, so the name the code shows
       // is the name the manifest actually declares.
       getManifest: () => JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')),
       sendMessage: async () => {},
-      openOptionsPage: async () => {},
+      openOptionsPage: async () => { calls.push(['options']); },
+      // Firefox-only API; its presence is how the code detects Gecko.
+      ...(MODE === 'firefox' ? {getBrowserInfo: async () => ({name: 'Firefox'})} : {}),
       onMessage: mkEvent(),
       onStartup: mkEvent(),
       onInstalled: mkEvent()
     },
     idle: {setDetectionInterval() {}, onStateChanged: mkEvent()},
-    tabs: {async create() {}, async query() { return [{id: 1}]; }, async update() {}}
+    tabs: {
+      async create(o) { calls.push(['tab', o.url]); },
+      async query() { return [{id: 1}]; },
+      async update(id, o) { calls.push(['tab', o.url]); }
+    }
   };
 }
 

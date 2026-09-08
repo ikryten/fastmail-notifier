@@ -17,3 +17,9 @@
    directly, so this file is the single place a compatibility shim ever needs to go. */
 
 self.api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
+
+/* Gecko detection by capability rather than user agent: runtime.getBrowserInfo()
+   is a Firefox API that Chrome does not implement. Needed where the browsers
+   differ in behaviour rather than in API surface -- Chrome adds its own "Options"
+   entry to the toolbar button's context menu, Firefox does not. */
+self.IS_GECKO = typeof self.api.runtime.getBrowserInfo === 'function';

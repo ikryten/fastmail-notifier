@@ -35,6 +35,12 @@ One codebase, one manifest, no build step. Load it with:
 
 `about:debugging` → **This Firefox** → **Load Temporary Add-on…** → pick `manifest.json`.
 
+Or, for a throwaway profile: `npx web-ext run --source-dir .`
+
+Requires Firefox 142+ (`strict_min_version`), which is the floor for
+`data_collection_permissions`. The extension declares `"required": ["none"]`: it sends
+nothing to any third party, and its only network peer is your own Fastmail account.
+
 Temporary add-ons are removed when Firefox restarts, and you will need to paste the API
 token again (a different profile means different storage). Firefox 127+ grants the
 declared host permissions at install; they can be revoked ad hoc from `about:addons`, so
@@ -68,6 +74,12 @@ the machine is ever compromised you can
 effect.
 
 ## Two things that look like problems but aren't
+
+**Each browser warns about the other's background key.** Chrome says
+`'background.scripts' requires manifest version of 2 or lower`; Mozilla's `web-ext lint`
+says `BACKGROUND_SERVICE_WORKER_IGNORED`. Both are expected and neither is a defect —
+they are the two halves of the dual-key manifest seeing each other's half. Otherwise the
+extension lints clean: 0 errors, 0 notices.
 
 **Chrome warns: `'background.scripts' requires manifest version of 2 or lower`.**
 Expected, and the manifest is correct. Firefox does not support

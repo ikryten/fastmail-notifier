@@ -197,6 +197,24 @@ console.log('\n11. image src normalisation');
   eq('null is dropped', f(null), null);
 }
 
+console.log('\n12. extension API namespace resolution');
+{
+  const ctx = load({token: 'good', unread: [], requests: [], sets: []}, []);
+  ok('api resolves to the namespace this browser exposes', ctx.api === ctx.__api);
+  if (mode === 'firefox') {
+    ok('only `browser` exists, as in Gecko',
+       typeof ctx.browser === 'object' && typeof ctx.chrome === 'undefined');
+    // The whole point: Firefox's chrome.* alias is callback-based, so awaiting
+    // it yields undefined. Resolving to `browser` is what keeps promises working.
+    ok('api is `browser`, not the callback-based chrome alias', ctx.api === ctx.browser);
+  }
+  else {
+    ok('only `chrome` exists, as in older Chrome',
+       typeof ctx.chrome === 'object' && typeof ctx.browser === 'undefined');
+    ok('api is `chrome`', ctx.api === ctx.chrome);
+  }
+}
+
 }
 
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');

@@ -157,6 +157,10 @@ Working in both browsers from one codebase, with no build step and no dependenci
 | Desktop notifications | verified | verified |
 | Deep link to a message | verified | untested |
 
-Not yet done: JMAP push via `eventSourceUrl` (an `EventSource` held in an offscreen
-document) in place of the 60-second poll. Polling is cheap enough — one small request
-per tick — that this is a latency improvement rather than a fix.
+**Polling is the intended design, not a placeholder.** JMAP push via `eventSourceUrl`
+was considered and deliberately declined. It would cut badge latency to near zero, but a
+poll costs one small request a minute and already works; push would need an `EventSource`
+held in an MV3 offscreen document — racy to create, requiring a busy flag and queue,
+self-terminating on idle — and Firefox has no `offscreen` API at all, so it would need a
+hidden-iframe shim as well. Alarms would still be required as a fallback. Not worth it
+for a minute of latency. Don't "finish" this.

@@ -192,6 +192,10 @@ The picker is populated from the account's own mailbox list (`Mailbox/get` with
 with the Inbox tick still on screen above it, since the Inbox cannot be named in that
 field.
 
+Deep links are unaffected by any of this. `/mail/Inbox/<emailId>` opens a message that
+lives only in another folder just as well: the `/Inbox/` segment names the view to open,
+not a constraint on the lookup, so no folder path has to be threaded into the URL.
+
 A watched folder deleted in Fastmail is a sharper problem than it looks: its stale id now
 goes into the `Email/query` **filter**, not just `Mailbox/get`'s ids, and a method-level
 rejection there fails the whole poll rather than one count — for the rest of the browser
@@ -307,7 +311,8 @@ Working in both browsers from one codebase, with no build step and no dependenci
 | Mark read | verified | verified |
 | Desktop notifications | verified | verified |
 | Move to Trash, deep links | verified | untested (same code path as mark read) |
-| Watched folders: badge, preview, notifications | untested | untested |
+| Watched folders: badge, preview, notifications | verified | verified |
+| Deep link to non-inbox mail | verified | verified |
 
 **Polling is the intended design, not a placeholder.** JMAP push via `eventSourceUrl`
 was considered and deliberately declined. It would cut badge latency to near zero, but a

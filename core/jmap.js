@@ -252,6 +252,11 @@ const jmap = {
      email id alone is enough. An id it does not recognise degrades to the folder
      view rather than erroring, which makes this safe to attempt unconditionally.
 
+     Re-verified once the preview began spanning folders: the /Inbox/ segment is
+     only the view to open, not a constraint on the lookup, so a message living
+     solely in another folder still opens from this URL. That is why no folder
+     path is threaded through here -- it would buy nothing.
+
      The ?u= key is the JMAP accountId minus its leading "u"
      (accountId "u1a2b3c4d" <-> "?u=1a2b3c4d"). Appended only when the accountId
      actually has that shape, so an unexpected id format cannot produce a bad param. */

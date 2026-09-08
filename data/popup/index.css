@@ -11,8 +11,15 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* Matches ignotifier's expanded view (fullWidth 750, fullHeight 600), which is
+   also the practical ceiling: Chrome caps extension popups at 800x600.
+
+   The width is the part that matters. A great many HTML emails are laid out on a
+   fixed 600px table, and the body iframe adds 32px of horizontal padding -- so at
+   620px the content area was 588px, just under that table, which is exactly what
+   forced a horizontal scrollbar. 750px gives 718px and clears it. */
 body {
-  width: 620px; height: 540px;
+  width: 750px; height: 600px;
   display: flex; flex-direction: column;
   background: var(--bg); color: var(--fg);
   font: 13px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;

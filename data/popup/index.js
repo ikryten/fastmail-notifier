@@ -103,6 +103,38 @@ function escapeHtml(s) {
   return s.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 }
 
+/* Attributes the browser acts on by itself. Every one goes through
+   urls.safeSrc, which is an allowlist ending in `return null`.
+
+   This used to run only img[src] through safeSrc and leave everything else to a
+   denylist that rejected javascript:/vbscript:/data:text/html but kept https:.
+   That left <video src>, <video poster>, <audio src>, <source src>, <track src>
+   and SVG <image href> calling home with remote content supposedly off -- and
+   `xlink:href` matched no branch at all, so it was never even scheme-checked.
+   An allowlist cannot fail that way: an attribute nobody thought about is
+   removed, not kept. */
+const FETCHING = new Set(['src', 'poster', 'data', 'background', 'lowsrc',
+                          'xlink:href', 'longdesc', 'cite', 'ping']);
+
+/* `href` is the exception, because on a link it is navigation rather than a
+   fetch: it costs nothing until the reader clicks, so it survives the remote
+   block. On anything else -- SVG <image>, <link> -- it loads on sight. */
+const NAV_ELEMENTS = new Set(['A', 'AREA']);
+const NAV_SCHEMES = /^\s*(https?:|mailto:|tel:|#)/i;
+
+function fetchingAttr(el, name) {
+  if (name === 'href') {
+    return !NAV_ELEMENTS.has(el.tagName.toUpperCase());
+  }
+  return FETCHING.has(name);
+}
+
+/* CSS that can pull a remote resource. `image-set()` is here because it is a
+   second way to name an image and does not contain `url(`; a backslash is here
+   because a CSS escape (`\75 rl(...)`) spells `url(` without matching any regex
+   for it, and no legitimate email inline style needs one. */
+const CSS_FETCH = /url\s*\(|image-set\s*\(|@import|\\/i;
+
 /* The iframe is already unscriptable (no allow-scripts), so this is defence in
    depth rather than the only line: strip active content and javascript: URLs so
    nothing dangerous survives even if the sandbox attribute is ever loosened. */
@@ -110,15 +142,28 @@ function sanitize(html, allowRemote) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   let blocked = 0;
 
+  /* `template` is in the list because querySelectorAll does not descend into its
+     content, so anything inside would sail straight past the attribute pass. */
   doc.querySelectorAll(
-    'script, iframe, object, embed, form, input, button, textarea, select, base, meta, link'
+    'script, iframe, object, embed, form, input, button, textarea, select, ' +
+    'base, meta, link, template'
   ).forEach(n => n.remove());
 
-  // A <style> block can fetch remote URLs through CSS, so blocking images without
-  // blocking stylesheets would leave the hole open.
   if (!allowRemote) {
+    /* Media elements are removed outright rather than scrubbed: a <video> keeps
+       its layout box and controls with no source, and nothing in an email needs
+       one. Their <source>/<track> children go with them; any left loose have
+       nothing to attach to. */
+    doc.querySelectorAll('video, audio').forEach(n => {
+      blocked++;
+      n.remove();
+    });
+    doc.querySelectorAll('source, track').forEach(n => n.remove());
+
+    // A <style> block can fetch remote URLs through CSS, so blocking images
+    // without blocking stylesheets would leave the hole open.
     doc.querySelectorAll('style').forEach(n => {
-      if (/url\s*\(/i.test(n.textContent || '')) {
+      if (CSS_FETCH.test(n.textContent || '')) {
         blocked++;
       }
       n.remove();
@@ -141,36 +186,38 @@ function sanitize(html, allowRemote) {
   for (const el of doc.querySelectorAll('*')) {
     for (const attr of [...el.attributes]) {
       const name = attr.name.toLowerCase();
+
       if (name.startsWith('on')) {
         el.removeAttribute(attr.name);
       }
-      // Never kept: it is a second source of remote URLs that safeSrc does not
-      // parse, and `src` alone is enough for a preview.
+      // Never kept: safeSrc cannot parse a candidate list, and `src` alone is
+      // enough for a preview.
       else if (name === 'srcset') {
         el.removeAttribute(attr.name);
       }
-      else if (name === 'src' && el.tagName === 'IMG') {
+      else if (name === 'style') {
+        if (!allowRemote && CSS_FETCH.test(attr.value)) {
+          blocked++;
+          el.removeAttribute(attr.name);
+        }
+      }
+      else if (fetchingAttr(el, name)) {
         const safe = urls.safeSrc(attr.value, allowRemote);
         if (safe) {
-          el.setAttribute('src', safe);
+          el.setAttribute(attr.name, safe);
         }
         else {
-          // Left dangling would render a broken-image icon; remote ones were
-          // already removed above when blocking, so this covers unresolvable
-          // sources such as a relative path.
-          el.removeAttribute('src');
+          /* Count only what was withheld for privacy. An unresolvable relative
+             path is dropped too, but nothing was kept from the reader. */
+          if (allowRemote === false && /^\s*(https?:)?\/\//i.test(attr.value)) {
+            blocked++;
+          }
+          el.removeAttribute(attr.name);
         }
       }
-      else if (name === 'style' && !allowRemote && /url\s*\(/i.test(attr.value)) {
-        blocked++;
-        el.removeAttribute(attr.name);
-      }
-      else if (name === 'background' && !allowRemote) {
-        blocked++;
-        el.removeAttribute(attr.name);
-      }
-      else if (/^(href|src|action|background|formaction)$/.test(name) &&
-               /^\s*(javascript|vbscript|data:text\/html)/i.test(attr.value)) {
+      // A link's href: allowlisted too, so no scheme we have not vouched for
+      // survives however it is spelled or escaped.
+      else if (name === 'href' && !NAV_SCHEMES.test(attr.value)) {
         el.removeAttribute(attr.name);
       }
     }
@@ -287,6 +334,13 @@ async function buildBody(id) {
     else {
       inner += '<pre>' + escapeHtml(part.value) + '</pre>';
     }
+    /* Email/get caps each body value at maxBodyValueBytes, so a large message
+       simply stops. Saying so beats letting the reader believe they reached the
+       end of it; the Open button next to the preview is the way to the rest. */
+    if (part.truncated) {
+      inner += '<p class="fmc-blocked">This message was too large to show in ' +
+               'full. Use Open to read the rest in Fastmail.</p>';
+    }
   }
 
   if (!inner) {
@@ -297,9 +351,24 @@ async function buildBody(id) {
             '). Enable it in options to load images.</p>' + inner;
   }
 
+  /* The real backstop for the no-remote-content promise. The sanitiser above is
+     an allowlist and should catch everything, but it is still an enumeration of
+     attributes, and this enumeration has been found wrong twice. A policy on the
+     document itself closes the whole class regardless of what was missed.
+
+     `default-src 'none'` also rules out frames, plugins, fetches and form
+     submission. `style-src 'unsafe-inline'` is required: FRAME_CSS is an inline
+     block and email is built out of style attributes. Inline attachments are
+     rewritten to data: URLs before they get here, so they render either way. */
+  const csp = allowRemote
+    ? "default-src 'none'; img-src https: data:; media-src https: data:; " +
+      "font-src https: data:; style-src 'unsafe-inline'"
+    : "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'";
+
   // base target=_blank plus allow-popups is what makes links work at all:
   // with no allow-scripts we cannot intercept clicks inside the frame.
   return '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+         '<meta http-equiv="Content-Security-Policy" content="' + csp + '">' +
          '<base target="_blank"><style>' + FRAME_CSS + '</style></head>' +
          '<body>' + inner + '</body></html>';
 }

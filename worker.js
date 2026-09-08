@@ -169,12 +169,12 @@ const handlers = {
      never assume the cached session survived -- check.connection re-bootstraps
      it if needed. */
   async connected() {
-    const token = await state.token();
-    if (!token) {
+    const cred = await state.credentials();
+    if (!cred.token) {
       throw jmap.err('auth', 'No API token set');
     }
-    const {session, mailboxes} = await check.connection(token);
-    return {token, session, mailboxes};
+    const {session, mailboxes} = await check.connection(cred);
+    return {token: cred.token, session, mailboxes};
   },
 
   /* The account's mailboxes, so the options page can offer a folder picker

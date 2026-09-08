@@ -18,7 +18,11 @@ function makeStorageArea(name, globalListeners) {
   return {
     _data: data,
     _listeners: listeners,
+    /* Lets a test run code *between* two reads, which is the only way to
+       reproduce a torn read of values that must be fetched together. */
+    _beforeGet: null,
     async get(keys) {
+      if (this._beforeGet) await this._beforeGet(Array.isArray(keys) ? keys : [keys]);
       if (keys === null || keys === undefined) return {...data};
       const list = Array.isArray(keys) ? keys : [keys];
       const out = {};
@@ -184,6 +188,13 @@ function makeFetch(server) {
       });
     }
 
+    /* Lets a test hold a poll in flight while it changes something underneath:
+       set server.gate to a promise and the answer waits on it. Only the API POST
+       is gated, so a warm-up bootstrap still completes normally. */
+    if (server.gate) {
+      await server.gate;
+    }
+
     const body = JSON.parse(opts.body);
     server.lastCall = body;
 
@@ -230,10 +241,17 @@ function makeFetch(server) {
            broken filter pass every assertion about which folders reach the
            preview -- the whole point of the multi-mailbox query. */
         const hits = unread
+          .filter(e => !(e.keywords || {})['$draft'])
           .filter(e => boxes.some(b => (e.mailboxIds || {})[b]))
           .sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
         server.lastHits = hits;
-        return ['Email/query', {ids: hits.map(e => e.id), total: hits.length}, tag];
+        const q = {ids: hits.map(e => e.id)};
+        // server.omitTotal models a server that ignores calculateTotal, so the
+        // client's fallback to the per-mailbox sum is exercised.
+        if (!server.omitTotal) {
+          q.total = hits.length;
+        }
+        return ['Email/query', q, tag];
       }
       if (name === 'Email/get') {
         const hits = server.lastHits || unread;
@@ -256,18 +274,23 @@ function makeFetch(server) {
    else throws rather than matching loosely: a malformed filter should fail the
    test that built it, not quietly behave like "everything". */
 function filterMailboxes(filter) {
-  if (!filter) {
-    throw new Error('Email/query sent no filter');
+  if (!filter || filter.operator !== 'AND' || !Array.isArray(filter.conditions)) {
+    throw new Error('unrecognised Email/query filter: ' + JSON.stringify(filter));
   }
-  if (filter.inMailbox) {
-    return [filter.inMailbox];
+  /* Both exclusions are required: Mailbox.unreadEmails counts mail with neither
+     $seen nor $draft, so a query that forgets $draft describes a different set
+     from the counter it is paired with. */
+  const excludes = k => filter.conditions.some(c => c.notKeyword === k);
+  if (!excludes('$seen') || !excludes('$draft')) {
+    throw new Error('Email/query must exclude both $seen and $draft: ' + JSON.stringify(filter));
   }
-  if (filter.operator === 'AND' && Array.isArray(filter.conditions)) {
-    const or = filter.conditions.find(c => c.operator === 'OR');
-    const seen = filter.conditions.some(c => c.notKeyword === '$seen');
-    if (or && seen && or.conditions.length) {
-      return or.conditions.map(c => c.inMailbox);
-    }
+  const one = filter.conditions.find(c => c.inMailbox);
+  if (one) {
+    return [one.inMailbox];
+  }
+  const or = filter.conditions.find(c => c.operator === 'OR');
+  if (or && or.conditions.length) {
+    return or.conditions.map(c => c.inMailbox);
   }
   throw new Error('unrecognised Email/query filter: ' + JSON.stringify(filter));
 }
@@ -289,7 +312,7 @@ function email(id, from, subject, minsAgo, boxes) {
 /* --- bootstrap a context --- */
 
 function load(server, calls, opts) {
-  const sandbox = {console, setTimeout, clearTimeout, AbortController, URL, Intl, Date, Math, JSON, Map, Set, Promise, Object, Array, String, Number, Boolean, Error};
+  const sandbox = {console, setTimeout, clearTimeout, AbortController, URL, Intl, Date, Math, JSON, Map, Set, Promise, Object, Array, String, Number, Boolean, Error, crypto};
   sandbox.self = sandbox;
   sandbox.globalThis = sandbox;
 

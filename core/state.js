@@ -50,6 +50,19 @@ self.state = {
     return token || '';
   },
 
+  /* Token and generation together, in a single read.
+
+     Reading them separately is a race with a genuine bite: a token change
+     landing between the two gets hands the caller token A stamped with B's
+     generation, after which every downstream fence believes A's results are
+     current -- and A's session gets cached under B's generation, so B's own
+     polls reuse it for as long as the browser session lives. setToken writes
+     both keys in one set, so one get is atomic against it. */
+  async credentials() {
+    const got = await api.storage.local.get(['token', 'token-gen']);
+    return {token: got.token || '', gen: got['token-gen'] || ''};
+  },
+
   /* Bumped on every token change. Cached session/mailbox data is stamped with the
      generation it was built under, so a bootstrap still in flight when the token
      changes cannot publish the old account's apiUrl/accountId over the new one --
@@ -57,14 +70,24 @@ self.state = {
      treats as transient and would therefore never clear. */
   async tokenGen() {
     const {'token-gen': gen} = await api.storage.local.get('token-gen');
-    return gen || 0;
+    // Same empty default as credentials(), or the two disagree for a profile
+    // that has a token but no generation yet and every fence misfires.
+    return gen || '';
   },
 
   async setToken(token) {
-    const gen = (await state.tokenGen()) + 1;
-    // Drop the old cache before publishing the new token, so no reader can pair
-    // the new token with stale session data.
+    /* A random id rather than a counter. Read-increment-write is not a
+       transaction: two options tabs saving at once both read N and both write
+       N+1, giving two different tokens the same generation. Nothing here needs
+       ordering, only difference. */
+    const gen = crypto.randomUUID();
+    /* Drop the old account's cache *and* its results before publishing the new
+       token, so no reader can pair the new token with stale session data and no
+       stale mail stays on screen. Clearing only the cache left the previous
+       account's badge, messages and breakdown visible until a poll under the new
+       token succeeded -- indefinitely, if it never did. */
     await api.storage.session.remove(['session', 'mailboxes']);
+    await state.clearResult();
     await api.storage.local.set({token, 'token-gen': gen});
   },
 
@@ -135,6 +158,18 @@ self.state = {
   },
   async setLastCheckAt(t) {
     return api.storage.local.set({'last-check-at': t});
+  },
+
+  /* When Fastmail last accepted us. Deliberately separate from last-check-at:
+     that one is the notification freshness floor and has to advance even on a
+     poll that made no request, whereas this must only move when the token was
+     actually presented to the server and worked. */
+  async authAt() {
+    const {'auth-at': t} = await api.storage.session.get('auth-at');
+    return t || 0;
+  },
+  async setAuthAt(t) {
+    return api.storage.session.set({'auth-at': t});
   },
 
   /* Notification silencing: an absolute epoch-ms deadline. */

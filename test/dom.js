@@ -144,10 +144,28 @@ console.log('\n4. popup: active content is stripped from HTML parts');
 
 console.log('\n5. popup: remote content honours the preference');
 {
-  const body = '<img src="https://tracker.example/pixel.gif" alt="pix">' +
-               '<img srcset="https://tracker.example/2x.gif 2x" alt="set">' +
-               '<div style="background:url(https://tracker.example/bg.png)">d</div>' +
-               '<style>.a{background:url(https://tracker.example/css.png)}</style>';
+  /* Every construct the audit found still calling home with images off. The
+     sanitiser used to run only img[src] through an allowlist and leave the rest
+     to a denylist that rejected javascript: but kept https:, so all of the
+     media, SVG and image-set() cases below fired a request -- and none of them
+     incremented the blocked counter, so the reader was told nothing was
+     withheld. */
+  const body =
+    '<img src="https://tracker.example/pixel.gif" alt="pix">' +
+    '<img srcset="https://tracker.example/2x.gif 2x" alt="set">' +
+    '<img SRC="//tracker.example/protocol-relative.gif" alt="rel">' +
+    '<video poster="https://tracker.example/poster.jpg" src="https://tracker.example/v.mp4"></video>' +
+    '<audio src="https://tracker.example/a.mp3"></audio>' +
+    '<video><source src="https://tracker.example/s.mp4"><track src="https://tracker.example/t.vtt" default></video>' +
+    '<svg><image href="https://tracker.example/svg1.png"/>' +
+    '<image xlink:href="https://tracker.example/svg2.png"/></svg>' +
+    '<div style="background:url(https://tracker.example/bg.png)">d</div>' +
+    '<div style="background-image:image-set(\'https://tracker.example/set.png\' 1x)">i</div>' +
+    '<div STYLE="background:\\75 rl(https://tracker.example/esc.png)">e</div>' +
+    '<div background="https://tracker.example/attr.png">b</div>' +
+    '<style>.a{background:url(https://tracker.example/css.png)}</style>' +
+    '<style>@import "https://tracker.example/import.css";</style>' +
+    '<a href="https://example.com/real-link">a link</a>';
 
   const on = await renderBody(htmlEmail([{partId: '1', type: 'text/html'}], {1: {value: body}}),
                               {loadRemoteImages: true});
@@ -155,13 +173,75 @@ console.log('\n5. popup: remote content honours the preference');
 
   const off = await renderBody(htmlEmail([{partId: '1', type: 'text/html'}], {1: {value: body}}),
                                {loadRemoteImages: false});
+
   ok('images off: no remote URL survives anywhere',
-     !/tracker\.example/.test(off), off.slice(0, 500));
+     !/tracker\.example/.test(off), off.slice(0, 900));
   ok('images off: srcset is gone', !/srcset/i.test(off));
-  ok('images off: the CSS url() is gone', !/url\(/i.test(off));
+  ok('images off: no CSS url() remains', !/url\(/i.test(off));
+  ok('images off: no image-set() remains', !/image-set/i.test(off));
+  ok('images off: media elements are removed outright',
+     !/<video|<audio|<source|<track/i.test(off), off.slice(0, 900));
   ok('images off: the img elements are removed, not left empty',
      !/<img/i.test(off), off.slice(0, 400));
-  ok('images off: the reader is told why', /Remote content blocked/.test(off));
+  ok('images off: xlink:href is gone too, not merely unchecked',
+     !/xlink:href/i.test(off), off.slice(0, 900));
+
+  /* The silent half of the failure: several of these were stripped without ever
+     being counted, so the notice did not appear and the reader believed the
+     message had rendered whole. */
+  const n = Number((/Remote content blocked \((\d+)\)/.exec(off) || [])[1] || 0);
+  ok('images off: everything withheld is counted', n >= 10, 'counted ' + n);
+
+  // A link is navigation, not a fetch -- it costs nothing until it is clicked.
+  ok('images off: ordinary links still work',
+     /example\.com\/real-link/.test(off), off.slice(0, 900));
+}
+{
+  // A scheme that executes must not survive however it is spelled.
+  const body = '<a href="javascript:alert(1)">x</a>' +
+               '<a href="JaVaScRiPt:alert(1)">y</a>' +
+               '<a href="  vbscript:x">z</a>' +
+               '<svg><a xlink:href="javascript:alert(1)">s</a></svg>';
+  const out = await renderBody(htmlEmail([{partId: '1', type: 'text/html'}], {1: {value: body}}),
+                               {loadRemoteImages: true});
+  ok('executable schemes are stripped from links whatever the casing',
+     !/javascript:|vbscript:/i.test(out), out.slice(0, 500));
+}
+
+console.log('\n5b. popup: the document carries its own CSP');
+{
+  const body = '<p>hello</p>';
+  const off = await renderBody(htmlEmail([{partId: '1', type: 'text/html'}], {1: {value: body}}),
+                               {loadRemoteImages: false});
+  ok('blocking: nothing loads by default', /default-src 'none'/.test(off), off.slice(0, 400));
+  ok('blocking: images only from data:, so no host is reachable',
+     /img-src data:;/.test(off), off.slice(0, 400));
+  ok('blocking: no https anywhere in the policy',
+     !/(img|media|font)-src[^;]*https:/.test(off), off.slice(0, 400));
+
+  const on = await renderBody(htmlEmail([{partId: '1', type: 'text/html'}], {1: {value: body}}),
+                              {loadRemoteImages: true});
+  ok('allowing: remote images are permitted', /img-src https: data:/.test(on), on.slice(0, 400));
+  ok('allowing: but scripts and frames still are not',
+     /default-src 'none'/.test(on), on.slice(0, 400));
+  ok('inline CSS stays allowed, or nothing is styled at all',
+     /style-src 'unsafe-inline'/.test(on));
+}
+
+console.log('\n5c. popup: a truncated body says so');
+{
+  const out = await renderBody(htmlEmail(
+    [{partId: '1', type: 'text/html'}],
+    {1: {value: '<p>the first half of a very large message</p>', isTruncated: true}}));
+  ok('the content that did arrive is still shown',
+     /the first half of a very large message/.test(out), out.slice(0, 400));
+  ok('and the reader is told the rest is missing',
+     /too large to show in full/.test(out), out.slice(0, 600));
+}
+{
+  const out = await renderBody(htmlEmail(
+    [{partId: '1', type: 'text/html'}], {1: {value: '<p>complete</p>'}}));
+  ok('a complete body carries no notice', !/too large/.test(out));
 }
 
 console.log('\n6. popup: nothing displayable says so');
@@ -373,6 +453,24 @@ console.log('\n9. options: the inbox tick and the empty-set warning');
   const txt = w.document.getElementById('folder-status').textContent;
   ok('an unmatched name is still reported', /no longer matches/.test(txt), txt);
   ok('alongside the nothing-watched warning', /nothing is being watched/i.test(txt), txt);
+}
+
+{
+  /* Fallback mode: the picker holds only the Inbox row and the folders live in
+     the text field, so rebuilding watchFolders from checkboxes wrote an empty
+     array -- silently deleting the saved list while the field still showed it. */
+  const w = await foldersPage({watchFolders: ['Important', 'Receipts/Family']},
+                              () => { throw new Error('No API token set'); });
+  const inbox = boxes(w)[0];
+  ok('the fallback still offers the inbox tick', Boolean(inbox && inbox.dataset.inbox));
+
+  inbox.checked = false;
+  await change(w, inbox);
+  eq('unticking it persists watchInbox',
+     (await w.chrome.storage.local.get('watchInbox')).watchInbox, false);
+  eq('without erasing the typed folders',
+     (await w.chrome.storage.local.get('watchFolders')).watchFolders,
+     ['Important', 'Receipts/Family']);
 }
 
 console.log('\n10. popup: the folder chip');

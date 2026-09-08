@@ -18,15 +18,22 @@ const check = {
      that ran late. */
   SKEW_MS: 60 * 1000,
 
-  async connection(token) {
-    const gen = await state.tokenGen();
+  /* How stale an authenticated round trip may get while nothing is watched
+     before we force one. See run(). */
+  REAUTH_MS: 15 * 60 * 1000,
 
+  /* Takes the caller's credential snapshot rather than re-reading the
+     generation: recapturing it here is exactly how a run holding the old token
+     acquires the new token's generation and then caches the wrong account
+     under it. */
+  async connection({token, gen}) {
     let session = await state.session();
     if (session && session.gen !== gen) {
       session = null;   // cached under a different token
     }
     if (!session) {
       session = Object.assign(await jmap.bootstrap(token), {gen});
+      await state.setAuthAt(Date.now());
       // Re-read: the token may have changed while we were bootstrapping, and
       // publishing this session would then pin the new token to the old account.
       if (await state.tokenGen() === gen) {
@@ -40,6 +47,7 @@ const check = {
     }
     if (!mailboxes) {
       mailboxes = Object.assign(await jmap.mailboxes(token, session), {gen});
+      await state.setAuthAt(Date.now());
       if (await state.tokenGen() === gen) {
         await state.setMailboxes(mailboxes);
       }
@@ -53,6 +61,12 @@ const check = {
      The inbox is held in its own pref rather than by name because JMAP identifies
      it by `role` and mailbox names are localised -- see core/state.js. Here that
      difference disappears: it becomes an ordinary row like any other. */
+  /* The part of preferences that is baked into the query, so a change to it
+     invalidates a poll already in flight. */
+  watchKey(prefs) {
+    return JSON.stringify([prefs.watchInbox !== false, prefs.watchFolders || []]);
+  },
+
   watchlist(mailboxes, prefs) {
     const out = [];
     if (prefs.watchInbox !== false) {
@@ -99,8 +113,8 @@ const check = {
   async run(reason) {
     console.log('[check] run:', reason);
 
-    const token = await state.token();
-    const gen = await state.tokenGen();
+    const cred = await state.credentials();
+    const {token, gen} = cred;
     if (!token) {
       await state.clearResult();
       await button.loggedOut('No API token yet. Open options to add one.');
@@ -109,19 +123,36 @@ const check = {
 
     await button.checking();
 
-    const prefs = await state.prefs();
+    let prefs = await state.prefs();
+
+    /* Connecting first was supposed to make a revoked token surface even when
+       nothing is watched. It does not, once the cache is warm: connection()
+       then issues no request, and jmap.poll returns locally for an empty watch
+       list, so the token is never presented to Fastmail at all. A revocation
+       would look like a healthy zero for as long as the browser session lives,
+       and -- because `count` never becomes UNAUTHENTICATED -- the toolbar click
+       would keep opening webmail instead of Options.
+
+       So when nothing is watched, drop the cache periodically and make
+       connection() re-bootstrap. One cheap GET every REAUTH_MS, against one
+       POST a minute in normal operation. */
+    if (!button.watching(prefs) &&
+        Date.now() - (await state.authAt()) > check.REAUTH_MS) {
+      console.log('[check] nothing watched; revalidating the token');
+      await api.storage.session.remove(['session', 'mailboxes']);
+    }
 
     let session, mailboxes, watchlist, result;
     try {
-      /* Always connect first, even when nothing is watched. A revoked token must
-         surface as a revoked token; letting it fall through to the empty-watchlist
-         branch below would report "no folders selected" and hide the real fault. */
-      ({session, mailboxes} = await check.connection(token));
+      ({session, mailboxes} = await check.connection(cred));
       watchlist = check.watchlist(mailboxes, prefs);
       result = await jmap.poll(token, session, watchlist.map(w => w.id));
+      if (watchlist.length) {
+        await state.setAuthAt(Date.now());   // poll() only calls out when it has ids
+      }
     }
     catch (e) {
-      return check.failed(e);
+      return check.failed(e, gen);
     }
 
     /* The token can be replaced or removed while the poll is in flight. Publishing
@@ -133,6 +164,22 @@ const check = {
       console.log('[check] token changed mid-poll, discarding results for', reason);
       return;
     }
+
+    /* Preferences can change while the poll is in flight. The watch set is baked
+       into the query, so if it moved these results describe folders the user has
+       just stopped watching -- publishing them would put withdrawn mail on the
+       badge and could raise a notification that cannot be retracted. The storage
+       listener has already queued a follow-up that will own those effects. */
+    const current = await state.prefs();
+    if (check.watchKey(current) !== check.watchKey(prefs)) {
+      console.log('[check] watch set changed mid-poll, discarding results for', reason);
+      return;
+    }
+    /* Notification settings are not part of the query, so they need no discard --
+       just use the current values rather than the ones captured before the
+       request, so switching notifications off takes effect at once rather than
+       one poll late. */
+    prefs = current;
 
     const seen = await state.seenIds();
     const seenSet = new Set(seen);
@@ -174,6 +221,12 @@ const check = {
     await paint(fresh.length > 0);
 
     if (fresh.length) {
+      /* Fence once more. Several awaited storage and toolbar operations separate
+         this from the check above, and unlike a badge, a notification cannot be
+         taken back once it is on screen. */
+      if (await state.tokenGen() !== gen) {
+        return console.log('[check] token changed before notifying; dropped', fresh.length);
+      }
       await check.notify(fresh, prefs, mailboxes, watchlist.length > 1);
       // Settle back to the steady-state icon after the flash.
       setTimeout(() => paint(false), 2500);
@@ -183,8 +236,18 @@ const check = {
     api.runtime.sendMessage({method: 'update'}).catch(() => {});
   },
 
-  async failed(e) {
+  async failed(e, gen) {
     console.warn('[check] failed:', e.code, e.message);
+
+    /* A failure belonging to a superseded token must not touch the
+       replacement's state. Without this, a 401 arriving from the old token
+       clears the results and shows the logged-out badge for a new token that is
+       perfectly good. */
+    if (gen !== undefined && await state.tokenGen() !== gen) {
+      console.log('[check] failure belongs to a superseded token, ignoring');
+      return;
+    }
+
     if (e.code === 'auth' || e.code === 'scope') {
       // The token is dead or wrong-scoped. Drop cached session state so a
       // corrected token re-bootstraps cleanly, and say so plainly.

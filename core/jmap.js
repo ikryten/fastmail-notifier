@@ -153,27 +153,30 @@ const jmap = {
     return out;
   },
 
-  /* The filter for one poll.
+  /* The filter for one poll: unread mail in any of `ids`.
 
-     A single mailbox keeps the plain FilterCondition it has always used -- that is
-     the default configuration, and there is no reason to make its request more
-     complicated than it was. Several mailboxes need RFC 8620's FilterOperator: the
-     `inMailbox` condition takes one id, so the union has to be spelled out as an OR
-     and then ANDed with the unread test. */
+     "Unread" has to mean what Mailbox.unreadEmails means, or the badge and the
+     list describe different sets. RFC 8621 defines that counter as emails
+     carrying *neither* $seen nor $draft, so both are excluded here. Filtering on
+     $seen alone let an unsent draft into the preview and into notifications
+     while contributing nothing to the count it was supposedly part of -- easy to
+     hit, since the picker offers Drafts like any other mailbox.
+
+     A FilterCondition carries one `notKeyword`, so two exclusions mean an AND
+     even for a single mailbox; the plain condition this used to send for the
+     common case is no longer expressive enough. Several mailboxes additionally
+     need an OR, because `inMailbox` takes one id. */
   unreadIn(ids) {
     // No mailbox means no valid filter -- an OR with no conditions is not one.
     if (!ids.length) {
       return null;
     }
-    if (ids.length === 1) {
-      return {inMailbox: ids[0], notKeyword: '$seen'};
-    }
+    const scope = ids.length === 1
+      ? {inMailbox: ids[0]}
+      : {operator: 'OR', conditions: ids.map(id => ({inMailbox: id}))};
     return {
       operator: 'AND',
-      conditions: [
-        {operator: 'OR', conditions: ids.map(id => ({inMailbox: id}))},
-        {notKeyword: '$seen'}
-      ]
+      conditions: [scope, {notKeyword: '$seen'}, {notKeyword: '$draft'}]
     };
   },
 
@@ -236,9 +239,22 @@ const jmap = {
       }
     }
 
+    /* The badge counts *messages*, not memberships. Summing each mailbox's
+       unreadEmails counts a message filed in two watched folders twice, while
+       the preview shows it once. Email/query's total is the distinct size of the
+       filtered union and is authoritative past LIMIT -- and calculateTotal was
+       already being requested and thrown away, so this costs nothing. The sum
+       remains as a fallback for a server that omits it.
+
+       Per-mailbox values stay in perBox for the tooltip breakdown, where they
+       are the right number; they simply do not have to add up to the total. */
+    const total = typeof tagged.q.total === 'number'
+      ? tagged.q.total
+      : perBox.reduce((n, b) => n + b.unread, 0);
+
     return {
       perBox,
-      count: perBox.reduce((n, b) => n + b.unread, 0),
+      count: total,
       messages: order.map(id => found.get(id)).filter(Boolean).map(jmap.summarise)
     };
   },

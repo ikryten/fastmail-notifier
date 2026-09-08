@@ -63,6 +63,27 @@ How the one manifest serves both browsers:
 - Storage change events use the global `storage.onChanged` with an `areaName` check
   rather than the per-area variant.
 
+## Replacing the token
+
+Cached session data is stamped with a **token generation** — a random id, reissued on
+every token change — and every poll carries the generation it started under. Results,
+failures and notifications are all fenced against it, so a request still in flight when
+you swap tokens cannot publish the old account's mail, cannot log out the new token with
+the old one's 401, and cannot leave the old account's session cached under the new
+token's identity.
+
+The token and its generation are read in **one** storage operation. Reading them
+separately is a real race: a swap landing between the two reads hands the poll one
+account's token with the other's generation, after which every fence downstream believes
+the stale results are current. The generation is a random id rather than a counter for a
+related reason — read-increment-write is not a transaction, so two options tabs saving at
+once would both write the same successor and give two different tokens one identity.
+Nothing here needs ordering, only difference.
+
+Replacing a token also clears the previous account's results immediately, rather than
+waiting for a poll under the new token to succeed. Otherwise the old account's badge and
+messages stayed on screen indefinitely if the new token never connected.
+
 ## Where the token lives
 
 In `chrome.storage.local`, which is **unencrypted on disk** in your browser
@@ -168,6 +189,15 @@ The check still stamps its timestamp on that path. Skipping it would leave a sta
 freshness floor behind, so re-enabling a folder after a quiet week would announce that
 entire week of backlog as new mail.
 
+Skipping the network entirely has one consequence worth naming: with a warm session cache
+the token is never presented to Fastmail, so a **revocation would go unnoticed** and the
+toolbar click would keep opening webmail instead of Options — the dead end this extension
+already fixed once. So while nothing is watched, a poll re-bootstraps the session if the
+last authenticated round trip is more than fifteen minutes old. That is one cheap GET per
+quarter hour, against one POST a minute in normal operation, and it is tracked separately
+from the freshness floor: an authentication timestamp must only move when the server
+actually accepted us.
+
 ### How folders are stored
 
 **Names, not mailbox ids.** Ids are opaque and account-scoped: stored ids would quietly
@@ -202,31 +232,67 @@ rejection there fails the whole poll rather than one count — for the rest of t
 session, since the mailbox list is cached. So a JMAP-level failure drops that cache, and
 the next poll re-resolves and recovers.
 
-### Two caveats
+### What the badge counts, and one caveat
 
-Counts come from each mailbox's own `unreadEmails`, so a message filed in **two** watched
-folders is counted twice on the badge while appearing once in the preview. This was hard
-to hit when only extra folders were watched; with the Inbox in the set it applies to
-anything you file into a watched folder without removing from the Inbox. The per-folder
-tooltip breakdown is what makes the number explicable. Deduplicating would mean querying
-the messages themselves rather than reading counters, which is a great deal more work than
-the badge is worth.
+The badge counts **distinct messages**, taken from `Email/query`'s own `total`. Summing
+each mailbox's `unreadEmails` would count a message filed in two watched folders twice
+while the preview showed it once — easy to hit now that the Inbox is in the watch set.
+`calculateTotal` was already being requested and discarded, so the correct number cost
+nothing. The per-folder tooltip lines are still per-mailbox counters, and with overlapping
+folders they will not add up to the header; that is the overlap being visible, not an
+error.
 
-The preview is still one page of 50 messages, now shared across every watched folder, so
-a chatty folder can push quieter mail off the end. That costs visibility in the popup, not
-correctness — the badge counts are authoritative past the page, and the freshness floor
-means rotated-out mail is never announced as new.
+"Unread" means what JMAP means by it: mail carrying **neither `$seen` nor `$draft`**
+(RFC 8621's definition of `Mailbox.unreadEmails`). Filtering on `$seen` alone let an
+unsent draft into the preview and into notifications while contributing nothing to the
+count it was supposedly part of — reachable simply by watching Drafts, which the picker
+offers like any other mailbox.
+
+The one caveat left: the preview is one page of 50 messages shared across every watched
+folder, so a chatty folder can push quieter mail off the end. That costs visibility in the
+popup, not correctness — the counts are authoritative past the page, and the freshness
+floor means rotated-out mail is never announced as new.
+
+### Deliberately not done
+
+Ticking a folder can announce a message that arrived shortly *before* you ticked it: it is
+absent from `seen-ids` and newer than the freshness floor. This is not treated as a bug.
+You have just asked to hear about that folder and there is recent mail in it; announcing
+it is the useful behaviour, and a burst collapses into one digest anyway. The alternative
+— a per-mailbox "first snapshot" baseline — means persistent state that has to be pruned
+as folders come and go, for a marginal gain. Don't "fix" this.
 
 ## Privacy: remote images
 
 Previews load remote images by default, so mail looks the way the sender intended. That
 means opening one can fire a tracking pixel. **Options → Message preview → Load remote
-images** turns it off, after which a preview makes no request to the sender at all:
-`src`, `srcset`, `<style>` blocks and inline `style` declarations containing `url()` are
-all stripped, since CSS can fetch remote URLs just as readily as an `<img>`. Blocked
-images are **removed entirely** rather than just losing their `src` — a src-less `<img>`
-still takes up layout as alt text or an empty box sized by its `width`/`height`. A
-one-line notice reports how many were withheld, so nothing disappears silently.
+images** turns it off, after which a preview makes no request to the sender.
+
+That guarantee is enforced in two independent layers, because the obvious way to do it —
+enumerate the attributes that fetch things and strip them — was found wrong twice.
+
+**A Content-Security-Policy on the rendered document.** The generated `srcdoc` carries
+`default-src 'none'`, with `img-src`/`media-src`/`font-src` limited to `data:` when remote
+content is off. This closes the whole class at once, whatever the sanitiser missed, and
+also rules out frames, plugins and form submission. A `srcdoc` frame otherwise inherits
+only the MV3 default policy, which constrains scripts and says nothing about images.
+
+**An allowlist in the sanitiser.** Every URL-bearing attribute — `src`, `poster`, `data`,
+`background`, `xlink:href`, SVG `href` and the rest — is routed through `urls.safeSrc`,
+which ends in `return null`: an attribute nobody anticipated is dropped, not kept. This
+replaced a denylist that ran only `img[src]` through the allowlist and checked everything
+else against a list of dangerous schemes, which meant `https:` sailed through on
+`<video poster>`, `<audio src>`, `<source>`, `<track>` and SVG `<image>` — and `xlink:href`
+matched no branch at all, so it was never even scheme-checked. A link's `href` is the one
+exception: navigation is not a fetch, so links keep working with images off.
+
+Media elements and remote images are **removed entirely** rather than stripped of their
+sources — a src-less `<img>` still takes up layout as alt text or an empty box, and a
+`<video>` keeps its controls. CSS is checked for `url()`, `image-set()`, `@import` and
+backslash escapes, since a CSS escape can spell `url(` without containing it. A one-line
+notice reports how many things were withheld, and everything blocked is now counted: the
+worst part of the old behaviour was that several of these were stripped silently, so the
+reader was told nothing had been withheld while five pixels fired.
 
 No probing is involved: with the setting off there is nothing to detect, because the
 images are never requested in the first place.
@@ -313,6 +379,8 @@ Working in both browsers from one codebase, with no build step and no dependenci
 | Move to Trash, deep links | verified | untested (same code path as mark read) |
 | Watched folders: badge, preview, notifications | verified | verified |
 | Deep link to non-inbox mail | verified | verified |
+| Remote content fully blocked | untested | untested |
+| Idle token revalidation | untested | untested |
 
 **Polling is the intended design, not a placeholder.** JMAP push via `eventSourceUrl`
 was considered and deliberately declined. It would cut badge latency to near zero, but a

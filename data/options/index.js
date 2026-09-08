@@ -124,7 +124,7 @@ function watchingNothing() {
   }
   // In the fallback branch the folders live in the text field, not in the picker.
   if (!$('folder-fallback').hidden) {
-    return !$('watchFolders').value.split(',').some(v => v.trim());
+    return !typedFolders().length;
   }
   return true;
 }
@@ -146,15 +146,25 @@ function paintFolderStatus() {
   say($('folder-status'), parts.join(' '), parts.length ? 'bad' : '');
 }
 
+const typedFolders = () =>
+  $('watchFolders').value.split(',').map(s => s.trim()).filter(Boolean);
+
 async function persistFolders() {
   const boxes = folderBoxes();
   const inbox = boxes.find(cb => cb.dataset.inbox);
+  /* In fallback mode the picker holds only the Inbox row and the folders live in
+     the text field, so rebuilding the list from checkboxes would write an empty
+     array -- silently deleting the saved folders while the field still showed
+     them. The visible field is the source of truth there. */
+  const inFallback = !$('folder-fallback').hidden;
   /* Both keys in a single set, so one storage change fires one re-poll. Two calls
      would fire two; check.execute would coalesce them, but there is no reason to
      lean on that. */
   await state.setPrefs({
     watchInbox: inbox ? inbox.checked : true,
-    watchFolders: boxes.filter(cb => cb.checked && !cb.dataset.inbox).map(cb => cb.dataset.path)
+    watchFolders: inFallback
+      ? typedFolders()
+      : boxes.filter(cb => cb.checked && !cb.dataset.inbox).map(cb => cb.dataset.path)
   });
   flashSaved();
   paintFolderStatus();
@@ -226,9 +236,7 @@ async function renderFolders() {
 }
 
 $('watchFolders').addEventListener('change', async () => {
-  await state.setPrefs({
-    watchFolders: $('watchFolders').value.split(',').map(s => s.trim()).filter(Boolean)
-  });
+  await state.setPrefs({watchFolders: typedFolders()});
   flashSaved();
   paintFolderStatus();
 });

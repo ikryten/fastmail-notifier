@@ -146,6 +146,17 @@ patches, and transient-failure behaviour.
 
 ## Status
 
-Chrome MV3, working. The manifest already carries a Firefox `background.scripts`
-key and `browser_specific_settings`, so the Firefox port should be small.
-Not yet done: EventSource push (`eventSourceUrl`) instead of polling.
+Working in both browsers from one codebase, with no build step and no dependencies.
+
+| | Chrome 152 | Firefox 155 |
+|---|---|---|
+| Unread badge | verified | verified |
+| Preview popup, prev/next | verified | verified |
+| HTML bodies with images | verified | verified |
+| Mark read / move to Trash | verified | untested |
+| Desktop notifications | verified | verified |
+| Deep link to a message | verified | untested |
+
+Not yet done: JMAP push via `eventSourceUrl` (an `EventSource` held in an offscreen
+document) in place of the 60-second poll. Polling is cheap enough — one small request
+per tick — that this is a latency improvement rather than a fix.

@@ -88,33 +88,51 @@ const button = {
     await button.icon('load');
   },
 
-  /* Tooltip body. With no watched folders this stays exactly "N unread"; once the
-     badge is summing more than the inbox, the number needs explaining, because
-     otherwise it disagrees with the preview window -- which is inbox-only by
-     design -- and looks like a bug. Folders sitting at zero are left out rather
-     than padding the tooltip with lines that say nothing. */
-  summary(count, inboxCount, breakdown) {
-    const watched = (breakdown || []).filter(b => b.unread > 0);
-    if (!watched.length) {
+  /* Tooltip body, given the per-folder breakdown.
+
+     One watched folder needs no breakdown -- it would only restate the total. The
+     inbox alone therefore reads exactly as it always has ("3 unread"), while a
+     single non-inbox folder names itself, because otherwise the number has no
+     stated home. Two or more get a line each, since the badge then disagrees with
+     any single folder and that looks like a bug unless it is explained. Folders
+     sitting at zero are left out rather than padding it with lines saying nothing. */
+  summary(count, breakdown) {
+    const rows = breakdown || [];
+    if (rows.length === 1) {
+      return rows[0].inbox ? count + ' unread' : count + ' unread in ' + rows[0].name;
+    }
+    const nonzero = rows.filter(b => b.unread > 0);
+    if (!nonzero.length) {
       return count + ' unread';
     }
-    const inbox = typeof inboxCount === 'number' ? inboxCount : count;
-    return [count + ' unread', '  ' + inbox + ' in Inbox']
-      .concat(watched.map(b => '  ' + b.unread + ' in ' + b.name)).join('\n');
+    return [count + ' unread']
+      .concat(nonzero.map(b => '  ' + b.unread + ' in ' + b.name)).join('\n');
   },
 
-  async render({count, inboxCount, breakdown, username, prefs, flash}) {
+  /* Whether anything is being watched at all. Read from prefs rather than from the
+     breakdown: the breakdown is empty on a cold worker start, before the first
+     poll has run, and prefs express the user's intent, which is what the
+     "nothing selected" message is actually about. */
+  watching(prefs) {
+    return prefs.watchInbox !== false || ((prefs.watchFolders || []).length > 0);
+  },
+
+  async render({count, breakdown, username, prefs, flash}) {
     if (count > 0) {
       await button.icon(flash ? 'new' : 'red');
       await button.badge(prefs.badge ? button.format(count) : '', prefs.badgeColor);
       await button.label(button.APP + '\n' + username + '\n' +
-                         button.summary(count, inboxCount, breakdown));
+                         button.summary(count, breakdown));
+      return;
     }
-    else {
-      await button.icon('gray');
-      await button.badge('');
-      await button.label(button.APP + '\n' + username + '\nNo unread mail');
-    }
+    await button.icon('gray');
+    await button.badge('');
+    /* Deliberately not the amber "!" -- that means the token is dead. This is a
+       working connection watching nothing, which is a choice the user made and can
+       undo, so it gets the ordinary idle icon and an explanatory tooltip. */
+    await button.label(button.APP + '\n' + username + '\n' + (button.watching(prefs)
+      ? 'No unread mail'
+      : 'No folders are being watched. Open options to choose some.'));
   }
 };
 

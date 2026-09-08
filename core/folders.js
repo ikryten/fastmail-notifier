@@ -63,6 +63,28 @@ const folders = {
       matched.push({id: hit.id, name: hit.name, path: hit.path || hit.name});
     }
     return {matched, missing, ids: matched.map(m => m.id)};
+  },
+
+  /* The folder to show for one message.
+
+     A message can be in several mailboxes at once. Prefer the inbox, so mail that
+     is in the inbox *and* filed elsewhere still reads as "Inbox" rather than
+     picking whichever id happened to come first. Anything we cannot name -- a
+     mailbox not in the cached list -- yields '' and the caller shows nothing,
+     which is better than showing a raw JMAP id. */
+  labelFor(mailboxes, mailboxIds) {
+    if (!mailboxes || !Array.isArray(mailboxes.all)) {
+      return '';
+    }
+    const ids = Object.keys(mailboxIds || {});
+    if (!ids.length) {
+      return '';
+    }
+    const name = m => (m && (m.path || m.name)) || '';
+    if (ids.includes(mailboxes.inbox)) {
+      return name(mailboxes.all.find(m => m.id === mailboxes.inbox));
+    }
+    return name(mailboxes.all.find(m => ids.includes(m.id)));
   }
 };
 

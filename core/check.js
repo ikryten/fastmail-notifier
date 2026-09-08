@@ -47,6 +47,24 @@ const check = {
     return {session, mailboxes};
   },
 
+  /* Every mailbox being watched, in display order: the inbox first when it is
+     ticked, then the user's folders in the order they saved them.
+
+     The inbox is held in its own pref rather than by name because JMAP identifies
+     it by `role` and mailbox names are localised -- see core/state.js. Here that
+     difference disappears: it becomes an ordinary row like any other. */
+  watchlist(mailboxes, prefs) {
+    const out = [];
+    if (prefs.watchInbox !== false) {
+      const box = (mailboxes.all || []).find(m => m.id === mailboxes.inbox);
+      out.push({id: mailboxes.inbox, name: (box && (box.path || box.name)) || 'Inbox', inbox: true});
+    }
+    for (const m of folders.resolve(mailboxes.all, prefs.watchFolders, mailboxes.inbox).matched) {
+      out.push({id: m.id, name: m.path, inbox: false});
+    }
+    return out;
+  },
+
   /* Set when a check is requested while one is already running. Module scope, so
      it does not survive worker teardown -- acceptable, because the alarm rearm is
      the durable backstop: losing a queued follow-up costs one poll period, not
@@ -93,14 +111,14 @@ const check = {
 
     const prefs = await state.prefs();
 
-    let session, mailboxes, result, watched;
+    let session, mailboxes, watchlist, result;
     try {
+      /* Always connect first, even when nothing is watched. A revoked token must
+         surface as a revoked token; letting it fall through to the empty-watchlist
+         branch below would report "no folders selected" and hide the real fault. */
       ({session, mailboxes} = await check.connection(token));
-      /* Folders the user asked to have counted. Resolved every poll rather than
-         cached: the mailbox list is refreshed with the session, and a folder
-         renamed in Fastmail should start or stop matching without a restart. */
-      watched = folders.resolve(mailboxes.all, prefs.watchFolders, mailboxes.inbox);
-      result = await jmap.poll(token, session, mailboxes, watched.ids);
+      watchlist = check.watchlist(mailboxes, prefs);
+      result = await jmap.poll(token, session, watchlist.map(w => w.id));
     }
     catch (e) {
       return check.failed(e);
@@ -123,43 +141,40 @@ const check = {
     /* Absence from seen-ids cannot mean "newly delivered": Email/query returns
        only the newest page, so once the unread count exceeds LIMIT, reading a
        recent message rotates an older one into view for the first time. Judging
-       by delivery time as well is what stops that being announced as new mail. */
+       by delivery time as well is what stops that being announced as new mail.
+
+       This is also what makes switching a folder on safe: a folder holding months
+       of unread mail fails the timestamp test, so none of it is announced. */
     const lastCheck = await state.lastCheckAt();
     const floor = lastCheck ? lastCheck - check.SKEW_MS : now - check.FRESH_MS;
 
     const fresh = result.messages.filter(m =>
       !seenSet.has(m.id) && new Date(m.receivedAt).getTime() >= floor);
 
-    /* Label the watched counts for the tooltip. A folder that vanished between
-       caching the list and the poll is simply absent from result.watched, so it
+    /* Label the counts. A watched folder the server returned no row for -- deleted
+       or renamed since the mailbox list was cached -- is simply absent, so it
        contributes nothing rather than a phantom zero. */
-    const byId = new Map(watched.matched.map(m => [m.id, m]));
-    const breakdown = result.watched.map(w => ({
-      name: (byId.get(w.id) || {}).path || w.id,
-      unread: w.unread
+    const byId = new Map(watchlist.map(w => [w.id, w]));
+    const breakdown = result.perBox.map(b => ({
+      name: (byId.get(b.id) || {}).name || b.id,
+      unread: b.unread,
+      inbox: Boolean((byId.get(b.id) || {}).inbox)
     }));
 
-    await state.setResult({
-      count: result.count,
-      inboxCount: result.inbox,
-      messages: result.messages,
-      breakdown
-    });
+    await state.setResult({count: result.count, messages: result.messages, breakdown});
     await state.setSeenIds(result.messages.map(m => m.id).concat(seen));
+    /* Stamped even when nothing is watched. Skipping it would leave a stale floor
+       behind, so re-enabling a folder after a quiet week would announce that whole
+       week of backlog as new mail. */
     await state.setLastCheckAt(now);
 
     const paint = flash => button.render({
-      count: result.count,
-      inboxCount: result.inbox,
-      breakdown,
-      username: session.username,
-      prefs,
-      flash
+      count: result.count, breakdown, username: session.username, prefs, flash
     });
     await paint(fresh.length > 0);
 
     if (fresh.length) {
-      await check.notify(fresh, prefs);
+      await check.notify(fresh, prefs, mailboxes, watchlist.length > 1);
       // Settle back to the steady-state icon after the flash.
       setTimeout(() => paint(false), 2500);
     }
@@ -179,6 +194,18 @@ const check = {
       api.runtime.sendMessage({method: 'update'}).catch(() => {});
       return;
     }
+    /* A method-level error can mean a watched folder was deleted in Fastmail: its
+       id is still in our cached mailbox list, and it now goes into the Email/query
+       filter, where the server may reject it outright -- killing the whole poll,
+       not just that folder's count. The cache lives for the browser session, so
+       that could persist for days. Dropping it makes the next poll re-resolve, at
+       which point the dead folder matches nothing and falls out of the filter.
+       Self-terminating: one extra request per failing poll, and it stops as soon
+       as the list is fresh again. */
+    if (e.code === 'jmap') {
+      await api.storage.session.remove(['mailboxes']);
+    }
+
     // Transient: keep the last known good count on screen rather than
     // flapping the badge to zero, but say so in the tooltip.
     const count = await state.count();
@@ -192,7 +219,6 @@ const check = {
     const session = await state.session();
     await button.render({
       count,
-      inboxCount: await state.inboxCount(),
       breakdown: await state.breakdown(),
       username: (session && session.username) || '',
       prefs: await state.prefs(),
@@ -208,7 +234,7 @@ const check = {
     return prefs.vips.some(v => v && message.fromEmail.includes(v.toLowerCase()));
   },
 
-  async notify(messages, prefs) {
+  async notify(messages, prefs, mailboxes, showFolder) {
     if (!prefs.notifications) {
       return;
     }
@@ -225,17 +251,30 @@ const check = {
     if (wanted.length === 1) {
       const m = wanted[0];
       const preview = m.preview.slice(0, 120);
+      /* Which folder, but only when more than one is being watched -- with just
+         the inbox it says nothing the user does not already know. It goes in the
+         title because Firefox accepts only type/title/message/iconUrl, so there
+         is no contextMessage to put it in. */
+      const where = showFolder ? folders.labelFor(mailboxes, m.mailboxIds) : '';
       // The preview goes in `message` rather than `contextMessage`: Firefox
       // supports neither contextMessage nor silent, and a single multi-line
       // message renders correctly in both browsers.
       return check.createNotification(m.id, {
-        title: m.fromName,
+        title: where ? m.fromName + ' \u00b7 ' + where : m.fromName,
         message: preview ? m.subject + '\n' + preview : m.subject
       });
     }
+    /* A digest, so a batch delivery cannot produce a stack of twenty popups. Only
+       four fit; say so rather than leaving the rest invisible, which matters more
+       now that several folders can feed one notification. */
+    const lines = wanted.slice(0, 4).map(m => m.fromName + ' - ' + m.subject);
+    const rest = wanted.length - 4;
+    if (rest > 0) {
+      lines.push('+ ' + rest + ' more');
+    }
     return check.createNotification(wanted[0].id, {
       title: wanted.length + ' new messages',
-      message: wanted.slice(0, 4).map(m => m.fromName + ' - ' + m.subject).join('\n')
+      message: lines.join('\n')
     });
   },
 

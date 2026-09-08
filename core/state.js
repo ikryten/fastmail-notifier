@@ -17,9 +17,16 @@ self.state = {
     // stops previews making any sender-controlled request.
     loadRemoteImages: true,
     vips: [],                 // lowercase substrings matched against the From address
-    /* Extra folders whose unread mail is added to the badge, stored as names or
-       "Parent/Child" paths rather than mailbox ids -- see core/folders.js for why.
-       The inbox is always counted and is never listed here. */
+    /* The folders this extension watches: counted on the badge, shown in the
+       preview, and notified about. Stored as names or "Parent/Child" paths rather
+       than mailbox ids -- see core/folders.js for why.
+
+       The inbox is held separately because it is identified by `role`, not by
+       name: JMAP names are localised, so "Inbox" is not a portable way to refer to
+       it. Keeping it out of the list also means an existing profile, which has no
+       watchInbox key at all, falls through to the default and keeps watching the
+       inbox exactly as before. */
+    watchInbox: true,
     watchFolders: [],
     openInNewTab: true
   },
@@ -79,20 +86,14 @@ self.state = {
     return api.storage.session.set({mailboxes});
   },
 
-  /* The badge number: inbox unread plus every watched folder. */
+  /* The badge number: unread across every watched folder. */
   async count() {
     const {count} = await api.storage.session.get('count');
     return typeof count === 'number' ? count : 0;
   },
 
-  /* The inbox alone. What the preview window can actually show, which is why it
-     -- not `count` -- decides whether the popup is attached. */
-  async inboxCount() {
-    const {'inbox-count': n} = await api.storage.session.get('inbox-count');
-    return typeof n === 'number' ? n : 0;
-  },
-
-  /* Per-folder unread, for the tooltip: [{name, unread}]. */
+  /* Per-folder unread, for the tooltip: [{name, unread}]. Includes the inbox when
+     it is watched, since it is no longer a special case. */
   async breakdown() {
     const {breakdown} = await api.storage.session.get('breakdown');
     return Array.isArray(breakdown) ? breakdown : [];
@@ -103,17 +104,13 @@ self.state = {
     return messages || [];
   },
 
-  async setResult({count, inboxCount, messages, breakdown}) {
-    return api.storage.session.set({
-      count, messages,
-      'inbox-count': inboxCount,
-      breakdown: breakdown || []
-    });
+  async setResult({count, messages, breakdown}) {
+    return api.storage.session.set({count, messages, breakdown: breakdown || []});
   },
 
   async clearResult() {
     return api.storage.session.set({
-      count: self.state.UNAUTHENTICATED, messages: [], 'inbox-count': 0, breakdown: []
+      count: self.state.UNAUTHENTICATED, messages: [], breakdown: []
     });
   },
 

@@ -141,11 +141,12 @@ footer { color: var(--muted); font-size: 12.5px; text-align: center; }
   </section>
 
   <section>
-    <h2>Folders counted on the badge</h2>
+    <h2>Folders to watch</h2>
     <p class="hint" style="margin-top:0">
-      Your Inbox is always counted. Tick any other folder whose unread mail should
-      be added to the badge. The preview window stays Inbox-only, and so do
-      notifications &mdash; this changes the number, not what you can flip through.
+      Unread mail in these folders is counted on the badge, shown in the preview
+      window, and can raise a desktop notification. Untick the Inbox if you only
+      want to hear about another folder. Notifications still obey the settings
+      below, including the VIP sender filter.
     </p>
 
     <div id="folder-list" class="folders" hidden></div>
@@ -156,7 +157,8 @@ footer { color: var(--muted); font-size: 12.5px; text-align: center; }
              placeholder="Archive, Receipts/Family">
       <p class="hint">
         Comma-separated. Use the folder&rsquo;s name, or its full
-        <code>Parent/Child</code> path if two folders share a name.
+        <code>Parent/Child</code> path if two folders share a name. The Inbox has
+        its own tick above; naming it here does nothing.
       </p>
     </div>
 

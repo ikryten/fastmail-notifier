@@ -38,7 +38,8 @@ function storageArea() {
       for (const k of (Array.isArray(keys) ? keys : [keys])) if (k in data) out[k] = data[k];
       return out;
     },
-    async set(o) { Object.assign(data, o); },
+    async set(o) { this._writes++; Object.assign(data, o); },
+    _writes: 0,
     async remove(keys) { for (const k of (Array.isArray(keys) ? keys : [keys])) delete data[k]; }
   };
 }
@@ -79,7 +80,8 @@ function chromeStub(overrides) {
   }, overrides || {});
 }
 
-const CORE = ['core/api.js', 'core/state.js', 'core/urls.js', 'core/bodyparts.js'];
+const CORE = ['core/api.js', 'core/state.js', 'core/folders.js',
+              'core/urls.js', 'core/bodyparts.js'];
 
 /* ---------------- popup body rendering ---------------- */
 
@@ -258,9 +260,12 @@ async function change(w, el) {
      rowText(w), ['Inbox', 'Important', 'Receipts', 'Receipts/Family']);
 
   const inbox = boxes(w)[0];
-  ok('the inbox row is ticked and disabled', inbox.checked && inbox.disabled);
+  /* It used to be disabled and labelled "always counted". It is now an ordinary
+     tick, because unticking it is the whole point of watching a VIP folder only. */
+  ok('the inbox row is ticked but no longer disabled', inbox.checked && !inbox.disabled);
+  ok('and is marked as the inbox rather than carrying a path', Boolean(inbox.dataset.inbox));
 
-  const ticked = boxes(w).filter(b => b.checked && !b.disabled).map(b => b.dataset.path);
+  const ticked = boxes(w).filter(b => b.checked && !b.dataset.inbox).map(b => b.dataset.path);
   eq('the saved folder is ticked', ticked, ['Receipts/Family']);
 
   // Ticking another must save both, and must never save the inbox.
@@ -304,8 +309,12 @@ async function change(w, el) {
   const w = await foldersPage({watchFolders: ['Important', 'Receipts/Family']},
                               () => { throw new Error('No API token set'); });
 
-  ok('the picker is hidden', w.document.getElementById('folder-list').hidden === true);
-  ok('and the text field is shown', w.document.getElementById('folder-fallback').hidden === false);
+  /* The picker stays visible holding just the Inbox row: watchInbox is not
+     expressible in the text field, so hiding it outright would leave a user with a
+     dead token unable to turn the inbox back on. */
+  ok('the inbox tick survives', boxes(w).length === 1 && Boolean(boxes(w)[0].dataset.inbox));
+  ok('and the text field is shown for the rest',
+     w.document.getElementById('folder-fallback').hidden === false);
   eq('prefilled with what is saved',
      w.document.getElementById('watchFolders').value, 'Important, Receipts/Family');
   ok('and the reason is explained',
@@ -318,6 +327,116 @@ async function change(w, el) {
   eq('typed names are trimmed and blanks dropped',
      (await w.chrome.storage.local.get('watchFolders')).watchFolders,
      ['Archive', 'Receipts/Family']);
+}
+
+console.log('\n9. options: the inbox tick and the empty-set warning');
+{
+  const w = await foldersPage({watchFolders: ['Important']},
+                              () => ({ok: true, folders: FOLDERS, inbox: 'MB-inbox'}));
+  const inbox = boxes(w)[0];
+
+  // One write, not two: one storage change means one re-poll.
+  const before = w.chrome.storage.local._writes;
+  inbox.checked = false;
+  await change(w, inbox);
+  eq('unticking the inbox persists watchInbox',
+     (await w.chrome.storage.local.get('watchInbox')).watchInbox, false);
+  eq('and leaves the folder list alone',
+     (await w.chrome.storage.local.get('watchFolders')).watchFolders, ['Important']);
+  eq('written in a single storage set', w.chrome.storage.local._writes - before, 1);
+
+  inbox.checked = true;
+  await change(w, inbox);
+  eq('re-ticking it persists too',
+     (await w.chrome.storage.local.get('watchInbox')).watchInbox, true);
+}
+{
+  const w = await foldersPage({watchInbox: false, watchFolders: []},
+                              () => ({ok: true, folders: FOLDERS, inbox: 'MB-inbox'}));
+  ok('watching nothing is warned about',
+     /nothing is being watched/i.test(w.document.getElementById('folder-status').textContent),
+     w.document.getElementById('folder-status').textContent);
+  ok('and flagged', /\bbad\b/.test(w.document.getElementById('folder-status').className));
+
+  // Ticking something must clear it without a reload.
+  const important = boxes(w).find(b => b.dataset.path === 'Important');
+  important.checked = true;
+  await change(w, important);
+  ok('and the warning clears as soon as something is ticked',
+     !/nothing is being watched/i.test(w.document.getElementById('folder-status').textContent),
+     w.document.getElementById('folder-status').textContent);
+}
+{
+  // Both facts matter to a user whose only saved folder has been deleted.
+  const w = await foldersPage({watchInbox: false, watchFolders: ['Gone']},
+                              () => ({ok: true, folders: FOLDERS, inbox: 'MB-inbox'}));
+  const txt = w.document.getElementById('folder-status').textContent;
+  ok('an unmatched name is still reported', /no longer matches/.test(txt), txt);
+  ok('alongside the nothing-watched warning', /nothing is being watched/i.test(txt), txt);
+}
+
+console.log('\n10. popup: the folder chip');
+
+const MBOX = {
+  gen: 3, inbox: 'MB-inbox',
+  all: [{id: 'MB-inbox', name: 'Inbox', path: 'Inbox', role: 'inbox'},
+        {id: 'MB-family', name: 'Family', path: 'Receipts/Family', role: null}]
+};
+const msg = (id, boxIds) => ({
+  id, threadId: 'T' + id, mailboxIds: Object.fromEntries(boxIds.map(b => [b, true])),
+  fromName: 'Sender', fromEmail: 's@x.com', subject: 'Subject ' + id,
+  receivedAt: new Date().toISOString(), preview: 'preview', hasAttachment: false
+});
+
+async function popupPage(messages, mailboxes, gen) {
+  const stub = chromeStub();
+  Object.assign(stub.storage.session._data, {messages, mailboxes, session: {username: 'me@x.com'}});
+  Object.assign(stub.storage.local._data, {'token-gen': typeof gen === 'number' ? gen : 3});
+  stub.runtime.sendMessage = async () => ({ok: true, email: {htmlBody: [], bodyValues: {}}});
+  const w = page('data/popup/index.html', CORE.concat(['data/popup/index.js']), stub);
+  await new Promise(r => setTimeout(r, 10));
+  return w;
+}
+
+{
+  const w = await popupPage([msg('E1', ['MB-family'])], MBOX);
+  const chip = w.document.getElementById('folder');
+  ok('a watched folder is named', chip.hidden === false);
+  eq('with its full path', chip.textContent, 'Receipts/Family');
+}
+{
+  // In two mailboxes at once: the inbox wins, so inbox mail reads as inbox mail.
+  const w = await popupPage([msg('E1', ['MB-family', 'MB-inbox'])], MBOX);
+  eq('a message in two mailboxes prefers the inbox',
+     w.document.getElementById('folder').textContent, 'Inbox');
+}
+{
+  const w = await popupPage([msg('E1', ['MB-unknown'])], MBOX);
+  const chip = w.document.getElementById('folder');
+  ok('an unrecognised mailbox shows no chip', chip.hidden === true);
+  ok('and never leaks a raw JMAP id into the page',
+     !/MB-unknown/.test(w.document.body.textContent));
+}
+{
+  const w = await popupPage([msg('E1', ['MB-family'])], null);
+  ok('no mailbox list means no chip, not a broken render',
+     w.document.getElementById('folder').hidden === true);
+  eq('and the message still renders',
+     w.document.getElementById('subject').textContent, 'Subject E1');
+}
+{
+  /* Changing the token clears the cached mailbox list but leaves the old messages
+     until the next poll, so a generation mismatch must suppress the chip rather
+     than label mail with the previous account's folder names. */
+  const w = await popupPage([msg('E1', ['MB-family'])], MBOX, 4);
+  ok('a stale mailbox list is not used', w.document.getElementById('folder').hidden === true);
+}
+{
+  const w = await popupPage([], MBOX);
+  ok('an empty list hides the chip', w.document.getElementById('folder').hidden === true);
+  ok('and no longer says "Inbox zero", which assumes the inbox is watched',
+     !/Inbox zero/.test(w.document.getElementById('overlay').textContent),
+     w.document.getElementById('overlay').textContent);
 }
 
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');

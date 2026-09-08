@@ -153,29 +153,60 @@ const jmap = {
     return out;
   },
 
+  /* The filter for one poll.
+
+     A single mailbox keeps the plain FilterCondition it has always used -- that is
+     the default configuration, and there is no reason to make its request more
+     complicated than it was. Several mailboxes need RFC 8620's FilterOperator: the
+     `inMailbox` condition takes one id, so the union has to be spelled out as an OR
+     and then ANDed with the unread test. */
+  unreadIn(ids) {
+    // No mailbox means no valid filter -- an OR with no conditions is not one.
+    if (!ids.length) {
+      return null;
+    }
+    if (ids.length === 1) {
+      return {inMailbox: ids[0], notKeyword: '$seen'};
+    }
+    return {
+      operator: 'AND',
+      conditions: [
+        {operator: 'OR', conditions: ids.map(id => ({inMailbox: id}))},
+        {notKeyword: '$seen'}
+      ]
+    };
+  },
+
   /* The whole poll in one HTTP round trip.
 
-     Note the back-reference is on `#ids`, a whole argument. It cannot be used for a
-     key nested inside `filter`, which is why the inbox id has to be resolved first
-     and cached rather than chained from a Mailbox/query in the same request.
+     `watchIds` is every mailbox the user is watching -- the inbox has no special
+     status here, which is why this no longer takes the `mailboxes` object at all.
+     The counts come from Mailbox/get, which is authoritative past our LIMIT, and
+     the messages from a single Email/query spanning the same set, so the badge,
+     the preview and the notifications all describe the same folders.
 
-     `extraIds` are folders the user asked to have counted on the badge. They ride
-     along in the Mailbox/get that already runs, so watching folders costs no extra
-     request -- only a longer `ids` array. Their messages are deliberately not
-     fetched: the preview window and notifications stay inbox-only, which is what
-     Email/query above is for. */
-  async poll(token, session, mailboxes, extraIds) {
+     Note the back-reference is on `#ids`, a whole argument. It cannot be used for a
+     key nested inside `filter`, which is why the mailbox ids have to be resolved
+     first and cached rather than chained from a Mailbox/query in the same request. */
+  async poll(token, session, watchIds) {
+    const ids = [...new Set((watchIds || []).filter(Boolean))];
+
+    /* Nothing watched. Return early rather than sending a request: there is
+       nothing to ask for, and an OR with no conditions is not a valid filter. */
+    if (!ids.length) {
+      return {count: 0, messages: [], perBox: []};
+    }
+
     const accountId = session.accountId;
-    const extra = (extraIds || []).filter(id => id && id !== mailboxes.inbox);
     const res = await jmap.call(token, session, [
       ['Mailbox/get', {
         accountId,
-        ids: [mailboxes.inbox].concat(extra),
+        ids,
         properties: ['unreadEmails', 'totalEmails']
       }, 'box'],
       ['Email/query', {
         accountId,
-        filter: {inMailbox: mailboxes.inbox, notKeyword: '$seen'},
+        filter: jmap.unreadIn(ids),
         sort: [{property: 'receivedAt', isAscending: false}],
         limit: jmap.LIMIT,
         calculateTotal: true
@@ -194,25 +225,20 @@ const jmap = {
     // Email/get gives no ordering guarantee, so re-impose the query's order.
     const found = new Map((tagged.get.list || []).map(e => [e.id, e]));
 
-    const box = boxes.get(mailboxes.inbox) || (tagged.box.list || [])[0] || {};
-    // The mailbox count is authoritative even past our LIMIT.
-    const inbox = typeof box.unreadEmails === 'number' ? box.unreadEmails : order.length;
-
-    /* A requested id that came back with no entry is a folder that has been
-       deleted or renamed since the list was cached. Omit it rather than counting
-       it as zero, so the caller can tell the two apart. */
-    const watched = [];
-    for (const id of extra) {
+    /* A requested id that came back with no entry is a folder deleted or renamed
+       since the mailbox list was cached. Omit it rather than counting it as zero,
+       so the caller can tell the two apart. */
+    const perBox = [];
+    for (const id of ids) {
       const b = boxes.get(id);
       if (b && typeof b.unreadEmails === 'number') {
-        watched.push({id, unread: b.unreadEmails});
+        perBox.push({id, unread: b.unreadEmails});
       }
     }
 
     return {
-      inbox,
-      watched,
-      count: watched.reduce((n, w) => n + w.unread, inbox),
+      perBox,
+      count: perBox.reduce((n, b) => n + b.unread, 0),
       messages: order.map(id => found.get(id)).filter(Boolean).map(jmap.summarise)
     };
   },

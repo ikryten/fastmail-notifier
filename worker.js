@@ -22,10 +22,11 @@ if (typeof importScripts !== 'undefined') {
    detaching it makes a click open the webmail instead of an empty window --
    the same trick ignotifier uses, and it is a genuinely nice bit of UX.
 
-   Keyed on the message list, not the badge count. Since the badge may also be
-   summing watched folders, a non-zero badge no longer implies the preview has
-   anything to display -- unread mail sitting only in a watched folder would
-   otherwise attach an empty popup. */
+   Keyed on the message list rather than the badge count. The two now normally
+   agree, since the preview covers every watched folder, but they can still part
+   company: the badge sums per-mailbox counters, so a message filed in two watched
+   folders counts twice, and the message list is one page deep while the counters
+   are not. The list is what the popup can actually show, so the list decides. */
 async function syncPopup() {
   const popup = (await state.messages()).length ? '/data/popup/index.html' : '';
   try {
@@ -137,11 +138,14 @@ api.idle.onStateChanged.addListener(s => {
   }
 });
 
-/* A changed token, period or folder set should take effect immediately, not next
-   tick. Ticking several folders in a row is safe: check.execute coalesces, so a
-   burst collapses into one extra poll. */
+/* A changed token, period or watch set should take effect immediately, not next
+   tick. Both folder keys are listened for: watchInbox moves on its own when the
+   inbox row alone is toggled, and missing it would leave the change invisible
+   until the next scheduled poll. Ticking several folders in a row is safe --
+   check.execute coalesces, so a burst collapses into one extra poll. */
 api.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (changes.token || changes.period || changes.watchFolders)) {
+  if (area === 'local' && (changes.token || changes.period ||
+                           changes.watchFolders || changes.watchInbox)) {
     repeater.reset('prefs-changed');
   }
 });
@@ -248,7 +252,6 @@ api.runtime.onMessage.addListener((request, sender, respond) => {
   const session = await state.session();
   await button.render({
     count,
-    inboxCount: await state.inboxCount(),
     breakdown: await state.breakdown(),
     username: (session && session.username) || '',
     prefs: await state.prefs(),

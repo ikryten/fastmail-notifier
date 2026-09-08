@@ -6,6 +6,7 @@ const view = {
   messages: [],
   index: 0,
   session: null,
+  mailboxes: null,     // for the folder chip; null just means no chip
   bodies: new Map(),   // emailId -> sanitized srcdoc, for the life of this popup
   busy: false
 };
@@ -51,14 +52,24 @@ async function paint() {
     $('subject').textContent = 'No unread mail';
     $('from').textContent = '';
     $('date').textContent = '';
+    $('folder').hidden = true;
     $('body').removeAttribute('srcdoc');
-    overlay('Inbox zero.');
+    // Not "Inbox zero": the watched set may not include the inbox at all.
+    overlay('All caught up.');
     return;
   }
 
   $('subject').textContent = m.subject;
   $('from').textContent = m.fromEmail ? m.fromName + ' <' + m.fromEmail + '>' : m.fromName;
   $('date').textContent = relative(m.receivedAt);
+
+  /* The list can span several folders, so say which one this is. Hidden rather
+     than blank when we cannot name it -- a raw JMAP id would be worse than
+     nothing, and an empty chip would still draw its border. */
+  const where = folders.labelFor(view.mailboxes, m.mailboxIds);
+  $('folder').textContent = where;
+  $('folder').title = where;
+  $('folder').hidden = !where;
 
   // Show the JMAP preview immediately, then swap in the real body when it lands.
   if (view.bodies.has(m.id)) {
@@ -371,6 +382,18 @@ document.addEventListener('keydown', e => {
 
 async function load() {
   view.session = await state.session();
+
+  /* Read straight from session storage rather than asking the worker: the popup is
+     deliberately kept off the network path, and the `folders` handler would
+     bootstrap over the wire on a cold session just to decorate a label.
+
+     The generation check closes the one gap in "messages implies mailboxes":
+     changing the token clears the cached mailbox list but leaves the old messages
+     until the next poll publishes, so without it the chip could name folders from
+     the previous account. */
+  const boxes = await state.mailboxes();
+  view.mailboxes = boxes && boxes.gen === await state.tokenGen() ? boxes : null;
+
   const messages = await state.messages();
 
   // Keep our position if the poll simply refreshed the same head of the list.

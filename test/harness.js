@@ -207,20 +207,38 @@ function makeFetch(server) {
            are distinguishable, and both are worth testing. */
         const fu = server.folderUnread || {};
         const list = (args.ids || []).map(id => {
-          if (id === INBOX) {
-            return {id: INBOX, unreadEmails: unread.length, totalEmails: 33855};
+          if (id in fu) {
+            return {id, unreadEmails: fu[id], totalEmails: fu[id]};
           }
-          return id in fu ? {id, unreadEmails: fu[id], totalEmails: fu[id]} : null;
+          /* The inbox falls back to the fixture list, so the many tests that only
+             ever set `server.unread` keep working untouched. */
+          if (id === INBOX) {
+            const n = unread.filter(e => (e.mailboxIds || {})[INBOX]).length;
+            return {id: INBOX, unreadEmails: n, totalEmails: 33855};
+          }
+          return null;
         }).filter(Boolean);
         return ['Mailbox/get', {list}, tag];
       }
       if (name === 'Email/query') {
         server.lastFilter = args.filter;
-        return ['Email/query', {ids: unread.map(e => e.id), total: unread.length}, tag];
+        const boxes = filterMailboxes(args.filter);
+        if (server.rejectUnknownMailbox && boxes.some(b => !MAILBOXES.some(m => m.id === b))) {
+          return ['error', {type: 'invalidArguments'}, tag];
+        }
+        /* Actually apply the filter. Returning everything regardless would let a
+           broken filter pass every assertion about which folders reach the
+           preview -- the whole point of the multi-mailbox query. */
+        const hits = unread
+          .filter(e => boxes.some(b => (e.mailboxIds || {})[b]))
+          .sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
+        server.lastHits = hits;
+        return ['Email/query', {ids: hits.map(e => e.id), total: hits.length}, tag];
       }
       if (name === 'Email/get') {
+        const hits = server.lastHits || unread;
         // Deliberately return them out of order: the client must re-impose query order.
-        return ['Email/get', {list: [...unread].reverse()}, tag];
+        return ['Email/get', {list: [...hits].reverse()}, tag];
       }
       if (name === 'Email/set') {
         server.sets.push(args.update);
@@ -234,13 +252,34 @@ function makeFetch(server) {
   };
 }
 
+/* Read the mailbox ids out of either filter shape the client may send. Anything
+   else throws rather than matching loosely: a malformed filter should fail the
+   test that built it, not quietly behave like "everything". */
+function filterMailboxes(filter) {
+  if (!filter) {
+    throw new Error('Email/query sent no filter');
+  }
+  if (filter.inMailbox) {
+    return [filter.inMailbox];
+  }
+  if (filter.operator === 'AND' && Array.isArray(filter.conditions)) {
+    const or = filter.conditions.find(c => c.operator === 'OR');
+    const seen = filter.conditions.some(c => c.notKeyword === '$seen');
+    if (or && seen && or.conditions.length) {
+      return or.conditions.map(c => c.inMailbox);
+    }
+  }
+  throw new Error('unrecognised Email/query filter: ' + JSON.stringify(filter));
+}
+
 function json(o) {
   return {ok: true, status: 200, async json() { return o; }, async text() { return JSON.stringify(o); }};
 }
 
-function email(id, from, subject, minsAgo) {
+function email(id, from, subject, minsAgo, boxes) {
   return {
-    id, threadId: 'T' + id, mailboxIds: {[INBOX]: true},
+    id, threadId: 'T' + id,
+    mailboxIds: Object.fromEntries((boxes || [INBOX]).map(b => [b, true])),
     from: [{name: from.split('@')[0], email: from}],
     subject, receivedAt: new Date(Date.now() - minsAgo * 60000).toISOString(),
     preview: 'preview of ' + subject, hasAttachment: false

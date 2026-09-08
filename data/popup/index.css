@@ -56,7 +56,16 @@ button[data-busy] { opacity: .55; pointer-events: none; }
 #subject { font-weight: 600; font-size: 14px; margin-bottom: 3px;
            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #meta .line { display: flex; gap: 10px; color: var(--muted); font-size: 12px; }
-#from { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#from { flex: 0 1 auto; min-width: 0; overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap; }
+/* Which folder the message is in. Shares the row with the sender, which
+   ellipsises first, while #date stays pinned right by its auto margin. */
+.chip {
+  flex: 0 1 auto; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  background: var(--hover); border: 1px solid var(--line); color: var(--muted);
+  border-radius: 4px; padding: 0 6px; font-size: 11px;
+}
 #date { margin-left: auto; white-space: nowrap; }
 
 #stage { position: relative; flex: 1; min-height: 0; }

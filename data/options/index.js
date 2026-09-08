@@ -57,14 +57,22 @@ async function paintConnection() {
 }
 
 
-/* --- folders counted on the badge ---
+/* --- folders to watch ---
 
    Two entry paths, one stored format. The picker is what you get when the
    account's mailbox list can be fetched; the comma-separated field is the
-   fallback for when it cannot -- no token yet, or Fastmail unreachable. Both
-   write the same array of names, so moving between them loses nothing. */
+   fallback for when it cannot -- no token yet, or Fastmail unreachable.
 
-function folderRow({path, label, checked, tag, bad, disabled}) {
+   Two keys, though: `watchInbox` is a boolean of its own because JMAP identifies
+   the inbox by role and mailbox names are localised, so "Inbox" is not a portable
+   way to name it in a list of names. The Inbox tick is therefore rendered in the
+   picker but persisted separately, and it stays on screen even in the fallback
+   branch -- otherwise a user whose token has died could not turn it back on. */
+
+let folderMissing = [];   // saved names that matched nothing at the last render
+let folderNote = '';      // why the picker is unavailable, if it is
+
+function folderRow({path, label, checked, tag, bad, inbox, missing}) {
   // The checkbox lives inside its label, so the whole row is clickable without
   // having to mint an id for every folder.
   const row = document.createElement('label');
@@ -73,8 +81,14 @@ function folderRow({path, label, checked, tag, bad, disabled}) {
   const cb = document.createElement('input');
   cb.type = 'checkbox';
   cb.checked = Boolean(checked);
-  cb.disabled = Boolean(disabled);
   cb.dataset.path = path;
+  if (inbox) {
+    cb.dataset.inbox = '1';
+  }
+  if (missing) {
+    // Ticked, but resolving to no mailbox -- so it watches nothing.
+    cb.dataset.missing = '1';
+  }
   cb.addEventListener('change', persistFolders);
   row.appendChild(cb);
 
@@ -91,20 +105,68 @@ function folderRow({path, label, checked, tag, bad, disabled}) {
   return row;
 }
 
+const folderBoxes = () =>
+  Array.from($('folder-list').querySelectorAll('input[type=checkbox]'));
+
+/* Watching nothing at all is allowed -- it is a legitimate way to mute the
+   extension without removing the token -- but it must never be silent, because a
+   grey icon and an empty badge look exactly like "you have no mail". */
+function watchingNothing() {
+  const boxes = folderBoxes();
+  if (!boxes.length) {
+    return false;
+  }
+  /* A ticked row that matches no mailbox contributes nothing, so it must not
+     count as watching something -- otherwise a user whose only saved folder was
+     deleted sees a silent zero badge and no warning. */
+  if (boxes.some(cb => cb.checked && !cb.dataset.missing)) {
+    return false;
+  }
+  // In the fallback branch the folders live in the text field, not in the picker.
+  if (!$('folder-fallback').hidden) {
+    return !$('watchFolders').value.split(',').some(v => v.trim());
+  }
+  return true;
+}
+
+function paintFolderStatus() {
+  const parts = [];
+  if (folderNote) {
+    parts.push(folderNote);
+  }
+  if (folderMissing.length) {
+    parts.push(folderMissing.length +
+      (folderMissing.length === 1 ? ' saved folder no longer matches' : ' saved folders no longer match') +
+      ' anything in this account. Untick to remove.');
+  }
+  if (watchingNothing()) {
+    parts.push('Nothing is being watched: the badge will stay empty and no ' +
+               'notifications will arrive. Tick at least one folder.');
+  }
+  say($('folder-status'), parts.join(' '), parts.length ? 'bad' : '');
+}
+
 async function persistFolders() {
-  const boxes = Array.from($('folder-list').querySelectorAll('input[type=checkbox]'));
-  // The Inbox row is disabled, and excluded here for the same reason it is shown
-  // at all: it is always counted, so storing it would double it.
+  const boxes = folderBoxes();
+  const inbox = boxes.find(cb => cb.dataset.inbox);
+  /* Both keys in a single set, so one storage change fires one re-poll. Two calls
+     would fire two; check.execute would coalesce them, but there is no reason to
+     lean on that. */
   await state.setPrefs({
-    watchFolders: boxes.filter(cb => cb.checked && !cb.disabled).map(cb => cb.dataset.path)
+    watchInbox: inbox ? inbox.checked : true,
+    watchFolders: boxes.filter(cb => cb.checked && !cb.dataset.inbox).map(cb => cb.dataset.path)
   });
   flashSaved();
+  paintFolderStatus();
 }
 
 async function renderFolders() {
   const prefs = await state.prefs();
   const wanted = prefs.watchFolders || [];
   const list = $('folder-list');
+  const inboxRow = () => folderRow({
+    path: '', label: 'Inbox', checked: prefs.watchInbox !== false, inbox: true
+  });
 
   let res;
   try {
@@ -114,16 +176,19 @@ async function renderFolders() {
     res = {ok: false, error: (e && e.message) || 'could not reach the extension'};
   }
 
+  list.textContent = '';
+
   if (!res || !res.ok || !Array.isArray(res.folders)) {
-    list.hidden = true;
-    list.textContent = '';
+    folderMissing = [];
+    folderNote = res && res.error
+      ? 'Could not load your folder list (' + res.error + '). Type folder names instead.'
+      : 'Add a token above to load your folder list.';
+    // The Inbox tick is not in the text field, so it has to stay on screen here.
+    list.appendChild(inboxRow());
+    list.hidden = false;
     $('folder-fallback').hidden = false;
     $('watchFolders').value = wanted.join(', ');
-    say($('folder-status'),
-        res && res.error
-          ? 'Could not load your folder list (' + res.error + '). Type folder names instead.'
-          : 'Add a token above to load your folder list.',
-        res && res.error ? 'bad' : '');
+    paintFolderStatus();
     return;
   }
 
@@ -131,11 +196,10 @@ async function renderFolders() {
   const chosen = new Set(matched.map(m => m.id));
   const label = f => f.path || f.name;
 
-  list.textContent = '';
   const inbox = res.folders.find(f => f.id === res.inbox);
   list.appendChild(folderRow({
     path: '', label: (inbox && inbox.name) || 'Inbox',
-    checked: true, disabled: true, tag: 'always counted'
+    checked: prefs.watchInbox !== false, inbox: true
   }));
 
   const rest = res.folders.filter(f => f.id !== res.inbox)
@@ -149,15 +213,16 @@ async function renderFolders() {
      quietly dropped, so a setting the user made stays visible and is removed
      deliberately. */
   for (const name of missing) {
-    list.appendChild(folderRow({path: name, label: name, checked: true, tag: 'not found', bad: true}));
+    list.appendChild(folderRow({
+      path: name, label: name, checked: true, tag: 'not found', bad: true, missing: true
+    }));
   }
 
+  folderMissing = missing;
+  folderNote = '';
   list.hidden = false;
   $('folder-fallback').hidden = true;
-  say($('folder-status'), missing.length
-    ? missing.length + (missing.length === 1 ? ' saved folder no longer matches' : ' saved folders no longer match') +
-      ' anything in this account. Untick to remove.'
-    : '', missing.length ? 'bad' : '');
+  paintFolderStatus();
 }
 
 $('watchFolders').addEventListener('change', async () => {
@@ -165,6 +230,7 @@ $('watchFolders').addEventListener('change', async () => {
     watchFolders: $('watchFolders').value.split(',').map(s => s.trim()).filter(Boolean)
   });
   flashSaved();
+  paintFolderStatus();
 });
 
 async function load() {

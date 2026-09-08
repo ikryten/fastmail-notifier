@@ -527,12 +527,15 @@ console.log('\n21. folder names resolve to mailbox ids');
   ok('a parent cycle terminates instead of blowing the stack', cyclic.size === 2);
 }
 
-console.log('\n22. watched folders are added to the badge, not to the preview');
+console.log('\n22. watched folders feed the badge, the preview and notifications');
 {
   const server = {
     token: 'good', requests: [], sets: [],
-    unread: [email('E1', 'a@x.com', 'newest', 1), email('E2', 'b@x.com', 'mid', 2),
-             email('E3', 'c@x.com', 'old', 3)],
+    unread: [email('E1', 'a@x.com', 'newest', 1),
+             email('X1', 'shop@x.com', 'important charge', 2, ['MB-important']),
+             email('E2', 'b@x.com', 'mid', 3),
+             email('Z1', 'orders@x.com', 'dispatched', 4, ['MB-family']),
+             email('E3', 'c@x.com', 'old', 5)],
     folderUnread: {'MB-important': 2, 'MB-family': 5}
   };
   const calls = [];
@@ -543,22 +546,31 @@ console.log('\n22. watched folders are added to the badge, not to the preview');
   await ctx.check.execute('test');
   const sess = ctx.__api.storage.session._data;
 
-  eq('the badge sums the inbox and every watched folder', sess.count, 10);
-  eq('the inbox count is kept separately', sess['inbox-count'], 3);
-  eq('the breakdown is labelled by path',
-     sess.breakdown, [{name: 'Important', unread: 2}, {name: 'Receipts/Family', unread: 5}]);
+  eq('the badge sums every watched folder', sess.count, 10);
+  eq('the breakdown leads with the inbox, then the folders in saved order',
+     sess.breakdown, [{name: 'Inbox', unread: 3, inbox: true},
+                      {name: 'Important', unread: 2, inbox: false},
+                      {name: 'Receipts/Family', unread: 5, inbox: false}]);
 
   // The point of riding along in the Mailbox/get that already runs.
-  eq('watched folders ride the existing Mailbox/get',
+  eq('every watched folder rides the existing Mailbox/get',
      server.lastBoxIds, ['MB-inbox', 'MB-important', 'MB-family']);
+
   /* The mailbox list is fetched once and cached, so a steady-state poll is still
      a single round trip no matter how many folders are watched. */
   const before = server.requests.length;
   await ctx.check.execute('again');
   eq('a steady-state poll is still one request', server.requests.length - before, 1);
 
-  eq('the message list stays inbox-only', sess.messages.map(m => m.id), ['E1', 'E2', 'E3']);
-  eq('and so does the query', server.lastFilter, {inMailbox: INBOX, notKeyword: '$seen'});
+  eq('the preview list spans the folders, newest first',
+     sess.messages.map(m => m.id), ['E1', 'X1', 'E2', 'Z1', 'E3']);
+  eq('and the query is an OR across all three mailboxes', server.lastFilter, {
+    operator: 'AND',
+    conditions: [
+      {operator: 'OR', conditions: [{inMailbox: INBOX}, {inMailbox: 'MB-important'}, {inMailbox: 'MB-family'}]},
+      {notKeyword: '$seen'}
+    ]
+  });
 
   const title = calls.filter(c => c[0] === 'title').pop()[1];
   ok('the tooltip explains the total', /\n10 unread\n/.test(title), title);
@@ -580,18 +592,22 @@ console.log('\n23. folder counting degrades safely');
   const sess = ctx.__api.storage.session._data;
 
   eq('a folder the server did not return contributes nothing', sess.count, 1);
-  eq('rather than a phantom zero in the tooltip', sess.breakdown, []);
+  eq('and is absent from the breakdown rather than a phantom zero',
+     sess.breakdown, [{name: 'Inbox', unread: 1, inbox: true}]);
   ok('an unresolvable name is not sent to the server',
      !(server.lastBoxIds || []).includes('Ghost'));
 
   const title = calls.filter(c => c[0] === 'title').pop()[1];
-  ok('with nothing watched, the tooltip is unchanged', /\n1 unread$/.test(title), title);
+  ok('a lone watched inbox reads exactly as it always has',
+     /\n1 unread$/.test(title), title);
 }
 
-console.log('\n24. unread only in a watched folder leaves the popup detached');
+console.log('\n24. mail in a watched folder reaches the preview window');
 {
   const server = {
-    token: 'good', requests: [], sets: [], unread: [],
+    token: 'good', requests: [], sets: [],
+    unread: [email('A1', 'important@x.com', 'statement', 1, ['MB-important']),
+             email('A2', 'important@x.com', 'payment due', 2, ['MB-important'])],
     folderUnread: {'MB-important': 4}
   };
   const calls = [];
@@ -600,10 +616,23 @@ console.log('\n24. unread only in a watched folder leaves the popup detached');
   await ctx.check.execute('test');
   await settle(ctx);
 
-  eq('the badge still counts it', ctx.__api.storage.session._data.count, 4);
-  /* The preview window is inbox-only, so a non-zero badge no longer implies it has
-     anything to show. Attaching it here would open an empty window. */
-  eq('but the popup stays detached, so a click opens webmail',
+  eq('the badge counts it', ctx.__api.storage.session._data.count, 4);
+  eq('and the preview can show it', ctx.__api.storage.session._data.messages.map(m => m.id),
+     ['A1', 'A2']);
+  /* This used to be the opposite assertion: the preview was inbox-only, so folder
+     mail deliberately left the popup detached. It now has something to show. */
+  eq('so the popup is attached', calls.filter(c => c[0] === 'popup').pop(),
+     ['popup', '/data/popup/index.html']);
+}
+{
+  // Nothing unread anywhere still detaches it, so a click opens webmail.
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  const calls = [];
+  const ctx = load(server, calls, {worker: true});
+  await ctx.__api.storage.local.set({token: 'good'});
+  await ctx.check.execute('test');
+  await settle(ctx);
+  eq('with nothing unread the popup stays detached',
      calls.filter(c => c[0] === 'popup').pop(), ['popup', '']);
 }
 
@@ -630,6 +659,201 @@ console.log('\n25. the options page can ask for the folder list');
   await settle(ctx);
   ok('a changed folder set triggers an immediate re-poll',
      server.requests.length > before);
+}
+
+console.log('\n26. the query filter is built to shape');
+{
+  const ctx = load({token: 'good', requests: [], sets: [], unread: []}, []);
+  const f = ctx.jmap.unreadIn;
+
+  eq('no mailbox yields no filter at all', f([]), null);
+  eq('one mailbox keeps the plain condition it always used',
+     f(['a']), {inMailbox: 'a', notKeyword: '$seen'});
+  eq('several become an OR of inMailbox, ANDed with unread', f(['a', 'b', 'c']), {
+    operator: 'AND',
+    conditions: [
+      {operator: 'OR', conditions: [{inMailbox: 'a'}, {inMailbox: 'b'}, {inMailbox: 'c'}]},
+      {notKeyword: '$seen'}
+    ]
+  });
+  ok('an OR is never emitted with no conditions',
+     !JSON.stringify(f(['a'])).includes('"conditions":[]'));
+}
+
+console.log('\n27. the inbox can be switched off');
+{
+  const server = {
+    token: 'good', requests: [], sets: [],
+    unread: [email('I1', 'boss@x.com', 'inbox mail', 1),
+             email('V1', 'vip@x.com', 'important mail', 2, ['MB-important'])],
+    folderUnread: {'MB-important': 1}
+  };
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.__api.storage.local.set({
+    token: 'good', watchInbox: false, watchFolders: ['Important']
+  });
+  await ctx.check.execute('test');
+  const sess = ctx.__api.storage.session._data;
+
+  eq('the inbox is not asked for', server.lastBoxIds, ['MB-important']);
+  /* One mailbox again, so the simple condition comes back -- not an OR of one. */
+  eq('and one watched folder means the simple filter shape',
+     server.lastFilter, {inMailbox: 'MB-important', notKeyword: '$seen'});
+  eq('the badge counts the folder alone', sess.count, 1);
+  eq('inbox mail stays out of the preview', sess.messages.map(m => m.id), ['V1']);
+  ok('no notification mentions the inbox message',
+     !calls.some(c => c[0] === 'notify' && /inbox mail/.test(String(c[3]))),
+     JSON.stringify(calls.filter(c => c[0] === 'notify')));
+  ok('but the folder message does notify',
+     calls.some(c => c[0] === 'notify' && /important mail/.test(String(c[3]))),
+     JSON.stringify(calls.filter(c => c[0] === 'notify')));
+
+  const title = calls.filter(c => c[0] === 'title').pop()[1];
+  ok('a single non-inbox folder names itself in the tooltip',
+     /1 unread in Important/.test(title), title);
+}
+
+console.log('\n28. watching nothing is allowed, but never silent');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: [email('E1', 'a@x.com', 'hi', 1)]};
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.__api.storage.local.set({token: 'good', watchInbox: false, watchFolders: []});
+  await ctx.check.execute('test');
+
+  const after = server.requests.length;
+  await ctx.check.execute('again');
+  eq('a poll with nothing watched issues no request', server.requests.length, after);
+
+  const sess = ctx.__api.storage.session._data;
+  eq('the badge is zero', sess.count, 0);
+  eq('with nothing to preview', sess.messages, []);
+  eq('and nothing to break down', sess.breakdown, []);
+
+  const badge = calls.filter(c => c[0] === 'badge').pop();
+  eq('the badge text is cleared', badge, ['badge', '']);
+  ok('and is not the amber "!", which means a dead token',
+     !calls.some(c => c[0] === 'badge' && c[1] === '!'));
+  const title = calls.filter(c => c[0] === 'title').pop()[1];
+  ok('the tooltip says why', /no folders are being watched/i.test(title), title);
+
+  /* The easiest bug to introduce here: skipping the timestamp on the empty path
+     leaves a stale freshness floor, so re-enabling a folder after a quiet week
+     would announce that whole week of backlog as new mail. */
+  ok('the check still stamps its timestamp',
+     ctx.__api.storage.local._data['last-check-at'] > 0);
+}
+
+console.log('\n29. a dead token still reads as a dead token when nothing is watched');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.__api.storage.local.set({token: 'WRONG', watchInbox: false, watchFolders: []});
+  await ctx.check.execute('test');
+
+  /* The connection is made before the empty-watchlist short circuit, so a revoked
+     token surfaces as one instead of hiding behind "no folders selected". */
+  ok('the amber "!" badge still appears', calls.some(c => c[0] === 'badge' && c[1] === '!'));
+  eq('and the count is the unauthenticated sentinel',
+     ctx.__api.storage.session._data.count, -1);
+}
+
+console.log('\n30. switching a folder on does not announce its backlog');
+{
+  const old = [];
+  for (let i = 0; i < 30; i++) {
+    old.push(email('O' + i, 'noise@x.com', 'old thing ' + i, 60 * 24 * 3, ['MB-important']));
+  }
+  const server = {
+    token: 'good', requests: [], sets: [],
+    unread: [email('E1', 'a@x.com', 'inbox mail', 1)],
+    folderUnread: {'MB-important': 30}
+  };
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.__api.storage.local.set({token: 'good'});
+  await ctx.check.execute('first');          // establishes last-check-at
+
+  server.unread = server.unread.concat(old);
+  calls.length = 0;
+  await ctx.__api.storage.local.set({watchFolders: ['Important']});
+  await ctx.check.execute('folder-added');
+
+  eq('the badge picks the backlog up', ctx.__api.storage.session._data.count, 31);
+  eq('but none of it is announced', calls.filter(c => c[0] === 'notify').length, 0);
+
+  // Something genuinely new in that folder still notifies.
+  server.unread = server.unread.concat([email('N1', 'new@x.com', 'just arrived', 0, ['MB-important'])]);
+  server.folderUnread = {'MB-important': 31};
+  calls.length = 0;
+  await ctx.check.execute('new-mail');
+  const notes = calls.filter(c => c[0] === 'notify');
+  eq('exactly one notification', notes.length, 1);
+  ok('naming the new message', /just arrived/.test(String(notes[0][3])), JSON.stringify(notes));
+  ok('and the folder it came from', /Important/.test(String(notes[0][2])), JSON.stringify(notes));
+}
+
+console.log('\n31. a digest says how many it left out');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  for (let i = 0; i < 7; i++) {
+    server.unread.push(email('B' + i, 'sender' + i + '@x.com', 'burst ' + i, 0));
+  }
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.__api.storage.local.set({token: 'good'});
+  await ctx.check.execute('test');
+
+  const note = calls.filter(c => c[0] === 'notify').pop();
+  eq('one digest, not seven popups', calls.filter(c => c[0] === 'notify').length, 1);
+  eq('titled with the count', note[2], '7 new messages');
+  ok('listing four', (String(note[3]).match(/burst /g) || []).length === 4, String(note[3]));
+  ok('and accounting for the rest', /\+ 3 more/.test(String(note[3])), String(note[3]));
+}
+
+console.log('\n32. a folder deleted server-side heals itself');
+{
+  /* The stale id now goes into the Email/query filter, not just Mailbox/get's ids,
+     so a server that rejects it kills the whole poll rather than one count. The
+     cached mailbox list lives for the browser session, so this has to self-heal. */
+  const server = {
+    token: 'good', requests: [], sets: [], unread: [email('E1', 'a@x.com', 'hi', 1)],
+    folderUnread: {'MB-important': 1}, rejectUnknownMailbox: true
+  };
+  const ctx = load(server, []);
+  await ctx.__api.storage.local.set({token: 'good', watchFolders: ['Important']});
+  await ctx.check.execute('warm');
+  ok('the mailbox list is cached', Boolean(ctx.__api.storage.session._data.mailboxes));
+
+  // Pretend Fastmail no longer knows MB-important, as it would after a deletion.
+  ctx.__api.storage.session._data.mailboxes.all =
+    ctx.__api.storage.session._data.mailboxes.all.concat([{id: 'MB-gone', name: 'Gone', path: 'Gone'}]);
+  await ctx.__api.storage.local.set({watchFolders: ['Gone']});
+  await ctx.check.execute('stale');
+
+  ok('the poisoned cache is dropped so the next poll re-resolves',
+     !ctx.__api.storage.session._data.mailboxes);
+}
+
+console.log('\n33. back-compatibility with a profile saved before this change');
+{
+  const server = {
+    token: 'good', requests: [], sets: [],
+    unread: [email('E1', 'a@x.com', 'hi', 1)]
+  };
+  const ctx = load(server, []);
+  // No watchInbox key at all, exactly as an existing install has it.
+  await ctx.__api.storage.local.set({token: 'good', watchFolders: []});
+  await ctx.check.execute('test');
+
+  ok('the key really is absent', !('watchInbox' in ctx.__api.storage.local._data));
+  eq('and the inbox is watched anyway', server.lastBoxIds, [INBOX]);
+  eq('with the filter shape it has always had',
+     server.lastFilter, {inMailbox: INBOX, notKeyword: '$seen'});
+  eq('and the inbox mail still arrives',
+     ctx.__api.storage.session._data.messages.map(m => m.id), ['E1']);
 }
 
 }

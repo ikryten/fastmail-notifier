@@ -124,41 +124,94 @@ Chrome adds one of those itself for any extension declaring `options_ui`; Firefo
 not, so the item is created only on Gecko — detected with `runtime.getBrowserInfo`, a
 Firefox-only API, rather than by sniffing the user agent.
 
-## Counting folders other than the Inbox
+## Folders to watch
 
-The badge counts the Inbox by default. **Options → Folders counted on the badge** adds
-others: tick a folder and its unread mail is included in the number.
+**Options → Folders to watch** lists your mailboxes. A ticked folder is counted on the
+badge, its unread mail appears in the preview window, and it can raise a desktop
+notification. The Inbox is ticked by default and is an ordinary row — **untick it** and
+you hear only about the folders you chose, which is the point: an *Important* or VIP
+folder can be the only thing that reaches you.
 
-This costs nothing extra. Each poll already issues a `Mailbox/get` to read the Inbox's
-`unreadEmails`, so watched folders simply ride along in the same call's `ids` array —
-one HTTP round trip per poll, however many folders are ticked.
+This costs no extra requests. A poll already issues a `Mailbox/get` for the Inbox's
+`unreadEmails` and an `Email/query` for its unread mail; watching more folders just
+lengthens the `ids` array and turns the query filter into an `OR`:
 
-**Only the number changes.** The preview window and the notifications stay Inbox-only:
-`Email/query` is still filtered to `inMailbox: <inbox>`, and no message bodies are
-fetched for watched folders. Once the badge is summing more than the Inbox, the tooltip
-breaks the total down per folder — otherwise the badge disagrees with the preview and
-looks like a bug. And because a non-zero badge no longer implies the preview has anything
-to show, the popup is attached based on the *message list* rather than the count; unread
-mail sitting only in a watched folder leaves a click opening webmail instead of an empty
-window.
+```js
+{operator: 'AND', conditions: [
+  {operator: 'OR', conditions: [{inMailbox: inboxId}, {inMailbox: folderId}]},
+  {notKeyword: '$seen'}
+]}
+```
+
+A single watched mailbox keeps the plain `{inMailbox, notKeyword}` condition it always
+used, so the default configuration sends exactly the request it sent before. Either way
+it is **one HTTP round trip per poll**, however many folders are ticked.
+
+Because the list can now span folders, each message in the preview carries a small chip
+naming the one it came from. A message in several mailboxes shows the Inbox in
+preference, so inbox mail that is also filed elsewhere still reads as inbox mail.
+
+Notifications are unchanged in kind: the global toggle and the VIP sender filter still
+apply on top, several messages arriving in one poll still collapse into a single digest
+(now saying `+ N more` when there are more than it can list), and a lone new message
+names its folder when more than one is being watched.
+
+### Watching nothing
+
+Unticking everything is allowed — it is a reasonable way to mute the extension without
+removing the token — but never silently. The poll then **skips the network entirely**
+(there is nothing to ask for, and an `OR` with no conditions is not a valid filter), the
+options page warns, and the tooltip says so. It deliberately does *not* use the amber `!`
+badge, which means the token is dead; this is a working connection watching nothing.
+
+The check still stamps its timestamp on that path. Skipping it would leave a stale
+freshness floor behind, so re-enabling a folder after a quiet week would announce that
+entire week of backlog as new mail.
+
+### How folders are stored
+
+**Names, not mailbox ids.** Ids are opaque and account-scoped: stored ids would quietly
+stop matching the moment the token pointed at a different account, with nothing on screen
+to explain the wrong number. A full `Parent/Child` path always wins; a bare leaf name
+matches only when it is unique across the account, since two folders both called `Notes`
+are genuinely ambiguous and silently picking one would put a wrong number on the badge.
+Names that match nothing — a renamed folder, a deleted one, an ambiguous leaf — are listed
+as **not found** and left ticked, so a setting you made stays visible and is removed
+deliberately rather than vanishing. They count as watching nothing, so a user whose only
+saved folder was deleted gets the warning above rather than a silent zero.
+
+The Inbox is the exception, held in its own `watchInbox` setting rather than by name. JMAP
+identifies it by `role`, and mailbox names are localised — on a French account the role is
+still `inbox` while the name is `Boîte de réception` — so a name is not a portable way to
+refer to it. Keeping it separate also means an existing profile, which has no `watchInbox`
+key at all, falls through to the default and keeps watching the Inbox exactly as before.
 
 The picker is populated from the account's own mailbox list (`Mailbox/get` with
-`ids: null`, which the session already fetches and caches). If that list cannot be
-reached — no token yet, or Fastmail unreachable — the section falls back to a
-comma-separated text field. Both write the same setting, so nothing is lost either way.
+`ids: null`, which the session already fetches and caches). If that list cannot be reached
+— no token yet, or Fastmail unreachable — it falls back to a comma-separated text field,
+with the Inbox tick still on screen above it, since the Inbox cannot be named in that
+field.
 
-What gets stored is **names, not mailbox ids**. Ids are opaque and account-scoped: stored
-ids would quietly stop matching the moment the token pointed at a different account, with
-nothing on screen to explain the wrong number. A full `Parent/Child` path always wins; a
-bare leaf name matches only when it is unique across the account, since two folders both
-called `Notes` are genuinely ambiguous and silently picking one would put a wrong number
-on the badge. Names that match nothing — a renamed folder, a deleted one, an ambiguous
-leaf — are listed in the picker as **not found** and left ticked, so a setting you made
-stays visible and is removed deliberately rather than vanishing.
+A watched folder deleted in Fastmail is a sharper problem than it looks: its stale id now
+goes into the `Email/query` **filter**, not just `Mailbox/get`'s ids, and a method-level
+rejection there fails the whole poll rather than one count — for the rest of the browser
+session, since the mailbox list is cached. So a JMAP-level failure drops that cache, and
+the next poll re-resolves and recovers.
 
-One caveat worth knowing: the counts come from each mailbox's own `unreadEmails`, so a
-message filed in two watched folders is counted twice. Deduplicating would mean querying
-the messages themselves, which is a great deal more work than the badge is worth.
+### Two caveats
+
+Counts come from each mailbox's own `unreadEmails`, so a message filed in **two** watched
+folders is counted twice on the badge while appearing once in the preview. This was hard
+to hit when only extra folders were watched; with the Inbox in the set it applies to
+anything you file into a watched folder without removing from the Inbox. The per-folder
+tooltip breakdown is what makes the number explicable. Deduplicating would mean querying
+the messages themselves rather than reading counters, which is a great deal more work than
+the badge is worth.
+
+The preview is still one page of 50 messages, now shared across every watched folder, so
+a chatty folder can push quieter mail off the end. That costs visibility in the popup, not
+correctness — the badge counts are authoritative past the page, and the freshness floor
+means rotated-out mail is never announced as new.
 
 ## Privacy: remote images
 
@@ -239,7 +292,8 @@ NotificationOptions Firefox does not implement. That is what makes the Firefox p
 verifiable without launching Firefox: reintroducing `contextMessage` makes the Firefox
 pass fail while Chrome still succeeds. Covers the logged-out and bad-token paths, badge counts,
 query ordering, backlog suppression, the VIP filter, silencing, the JMAP write
-patches, folder-name resolution and badge summing, and transient-failure behaviour.
+patches, folder-name resolution, multi-mailbox query shapes, the empty watch set, and
+transient-failure behaviour.
 
 ## Status
 
@@ -253,7 +307,7 @@ Working in both browsers from one codebase, with no build step and no dependenci
 | Mark read | verified | verified |
 | Desktop notifications | verified | verified |
 | Move to Trash, deep links | verified | untested (same code path as mark read) |
-| Extra folders on the badge | untested | untested |
+| Watched folders: badge, preview, notifications | untested | untested |
 
 **Polling is the intended design, not a placeholder.** JMAP push via `eventSourceUrl`
 was considered and deliberately declined. It would cut badge latency to near zero, but a

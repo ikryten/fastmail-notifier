@@ -153,9 +153,9 @@ Working in both browsers from one codebase, with no build step and no dependenci
 | Unread badge | verified | verified |
 | Preview popup, prev/next | verified | verified |
 | HTML bodies with images | verified | verified |
-| Mark read / move to Trash | verified | untested |
+| Mark read | verified | verified |
 | Desktop notifications | verified | verified |
-| Deep link to a message | verified | untested |
+| Move to Trash, deep links | verified | untested (same code path as mark read) |
 
 **Polling is the intended design, not a placeholder.** JMAP push via `eventSourceUrl`
 was considered and deliberately declined. It would cut badge latency to near zero, but a

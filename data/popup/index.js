@@ -217,7 +217,7 @@ const FRAME_CSS = `
 `;
 
 async function buildBody(id) {
-  const res = await chrome.runtime.sendMessage({method: 'body', id});
+  const res = await api.runtime.sendMessage({method: 'body', id});
   if (!res || !res.ok) {
     throw new Error((res && res.error) || 'Could not load message');
   }
@@ -274,7 +274,7 @@ async function act(button, method) {
   view.busy = true;
   button.setAttribute('data-busy', '');
   try {
-    const res = await chrome.runtime.sendMessage({method, ids: [m.id]});
+    const res = await api.runtime.sendMessage({method, ids: [m.id]});
     if (!res || !res.ok) {
       throw new Error((res && res.error) || 'Action failed');
     }
@@ -298,19 +298,19 @@ $('open').addEventListener('click', () => {
   // Deep link to whatever is on screen; the worker falls back to the inbox
   // when there is nothing selected.
   const m = view.messages[view.index];
-  chrome.runtime.sendMessage({method: 'open', id: m ? m.id : null});
+  api.runtime.sendMessage({method: 'open', id: m ? m.id : null});
   window.close();
 });
 $('inbox').addEventListener('click', () => {
   // No id, so jmap.webUrl falls back to the plain inbox URL.
-  chrome.runtime.sendMessage({method: 'open', id: null});
+  api.runtime.sendMessage({method: 'open', id: null});
   window.close();
 });
 $('settings').addEventListener('click', () => {
-  chrome.runtime.openOptionsPage();
+  api.runtime.openOptionsPage();
   window.close();
 });
-$('refresh').addEventListener('click', () => chrome.runtime.sendMessage({method: 'check'}));
+$('refresh').addEventListener('click', () => api.runtime.sendMessage({method: 'check'}));
 
 document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft') return move(-1);
@@ -338,7 +338,7 @@ async function load() {
   await paint();
 }
 
-chrome.runtime.onMessage.addListener(request => {
+api.runtime.onMessage.addListener(request => {
   if (request && request.method === 'update') {
     load();
   }

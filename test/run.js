@@ -1,5 +1,5 @@
 'use strict';
-const {load, email, INBOX, TRASH} = require('./harness');
+const {load, email, INBOX, TRASH, setMode} = require('./harness');
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -9,6 +9,9 @@ function ok(name, cond, extra) {
 function eq(name, a, b) { ok(name, JSON.stringify(a) === JSON.stringify(b), 'got ' + JSON.stringify(a) + '\n       want ' + JSON.stringify(b)); }
 
 (async () => {
+for (const mode of ['chrome', 'firefox']) {
+setMode(mode);
+console.log('\n\x1b[1m========== simulating ' + mode.toUpperCase() + ' ==========\x1b[0m');
 
 console.log('\n1. no token -> logged-out state, no network');
 {
@@ -16,7 +19,7 @@ console.log('\n1. no token -> logged-out state, no network');
   const calls = [];
   const ctx = load(server, calls);
   await ctx.check.execute('test');
-  eq('count is the unauthenticated sentinel', ctx.chrome.storage.session._data.count, -1);
+  eq('count is the unauthenticated sentinel', ctx.__api.storage.session._data.count, -1);
   ok('never hit the network', server.requests.length === 0);
   ok('amber "!" badge', calls.some(c => c[0] === 'badge' && c[1] === '!'));
 }
@@ -26,10 +29,10 @@ console.log('\n2. bad token -> auth failure surfaces, session cache cleared');
   const server = {token: 'good', unread: [], requests: [], sets: []};
   const calls = [];
   const ctx = load(server, calls);
-  await ctx.chrome.storage.local.set({token: 'WRONG'});
+  await ctx.__api.storage.local.set({token: 'WRONG'});
   await ctx.check.execute('test');
-  eq('count is the unauthenticated sentinel', ctx.chrome.storage.session._data.count, -1);
-  ok('no stale session left behind', !ctx.chrome.storage.session._data.session);
+  eq('count is the unauthenticated sentinel', ctx.__api.storage.session._data.count, -1);
+  ok('no stale session left behind', !ctx.__api.storage.session._data.session);
   ok('tooltip names the failure',
      calls.some(c => c[0] === 'title' && /rejected the API token \(401\)/.test(c[1])));
 }
@@ -42,16 +45,16 @@ console.log('\n3. happy path: badge, ordering, backlog suppression');
   };
   const calls = [];
   const ctx = load(server, calls);
-  await ctx.chrome.storage.local.set({token: 'good'});
+  await ctx.__api.storage.local.set({token: 'good'});
   await ctx.check.execute('test');
 
-  eq('badge shows the mailbox unread count', ctx.chrome.storage.session._data.count, 3);
+  eq('badge shows the mailbox unread count', ctx.__api.storage.session._data.count, 3);
   eq('query order is re-imposed over Email/get',
-     ctx.chrome.storage.session._data.messages.map(m => m.id), ['E1', 'E2', 'E3']);
+     ctx.__api.storage.session._data.messages.map(m => m.id), ['E1', 'E2', 'E3']);
   eq('filter targets the inbox and unseen only',
      server.lastFilter, {inMailbox: INBOX, notKeyword: '$seen'});
   eq('sender is flattened for the popup',
-     ctx.chrome.storage.session._data.messages[0].fromEmail, 'a@x.com');
+     ctx.__api.storage.session._data.messages[0].fromEmail, 'a@x.com');
 
   const notifies = calls.filter(c => c[0] === 'notify');
   ok('cold start does not notify about the 400-min-old backlog',
@@ -67,7 +70,7 @@ console.log('\n4. second poll: no re-notify, new mail does notify');
   const server = {token: 'good', requests: [], sets: [], unread: [email('E1', 'a@x.com', 'first', 1)]};
   const calls = [];
   const ctx = load(server, calls);
-  await ctx.chrome.storage.local.set({token: 'good'});
+  await ctx.__api.storage.local.set({token: 'good'});
   await ctx.check.execute('one');
   const after1 = calls.filter(c => c[0] === 'notify').length;
 
@@ -87,7 +90,7 @@ console.log('\n5. VIP filter');
   const server = {token: 'good', requests: [], sets: [], unread: []};
   const calls = [];
   const ctx = load(server, calls);
-  await ctx.chrome.storage.local.set({token: 'good', notifyVipOnly: true, vips: ['@work.com'], 'seen-ids': ['seed']});
+  await ctx.__api.storage.local.set({token: 'good', notifyVipOnly: true, vips: ['@work.com'], 'seen-ids': ['seed']});
   server.unread = [email('E1', 'noise@spam.com', 'ignore me', 0)];
   await ctx.check.execute('a');
   eq('non-VIP does not notify', calls.filter(c => c[0] === 'notify').length, 0);
@@ -104,19 +107,19 @@ console.log('\n6. silencing');
   const server = {token: 'good', requests: [], sets: [], unread: []};
   const calls = [];
   const ctx = load(server, calls);
-  await ctx.chrome.storage.local.set({token: 'good', 'seen-ids': ['seed']});
+  await ctx.__api.storage.local.set({token: 'good', 'seen-ids': ['seed']});
   await ctx.state.setSilentUntil(Date.now() + 60000);
   server.unread = [email('E1', 'a@x.com', 'quiet please', 0)];
   await ctx.check.execute('test');
   eq('silenced: no notification', calls.filter(c => c[0] === 'notify').length, 0);
-  eq('but the badge still updates', ctx.chrome.storage.session._data.count, 1);
+  eq('but the badge still updates', ctx.__api.storage.session._data.count, 1);
 }
 
 console.log('\n7. writes: mark read and trash send correct JMAP patches');
 {
   const server = {token: 'good', requests: [], sets: [], unread: [email('E1', 'a@x.com', 's', 1)]};
   const ctx = load(server, []);
-  await ctx.chrome.storage.local.set({token: 'good'});
+  await ctx.__api.storage.local.set({token: 'good'});
   await ctx.check.execute('seed');
 
   const session = await ctx.state.session();
@@ -136,14 +139,14 @@ console.log('\n8. transient network failure keeps the last good count');
   const server = {token: 'good', requests: [], sets: [], unread: [email('E1', 'a@x.com', 's', 1)]};
   const calls = [];
   const ctx = load(server, calls);
-  await ctx.chrome.storage.local.set({token: 'good'});
+  await ctx.__api.storage.local.set({token: 'good'});
   await ctx.check.execute('seed');
-  eq('seeded', ctx.chrome.storage.session._data.count, 1);
+  eq('seeded', ctx.__api.storage.session._data.count, 1);
 
   ctx.fetch = async () => { throw new Error('offline'); };
   calls.length = 0;
   await ctx.check.execute('offline');
-  eq('count is not flapped to zero', ctx.chrome.storage.session._data.count, 1);
+  eq('count is not flapped to zero', ctx.__api.storage.session._data.count, 1);
   ok('tooltip explains', calls.some(c => c[0] === 'title' && /Last check failed/.test(c[1])));
   ok('icon is not switched to logged-out', !calls.some(c => c[0] === 'badge' && c[1] === '!'));
 }
@@ -192,6 +195,8 @@ console.log('\n11. image src normalisation');
   eq('whitespace-obfuscated javascript: is dropped', f('  javascript:alert(1)'), null);
   eq('empty is dropped', f(''), null);
   eq('null is dropped', f(null), null);
+}
+
 }
 
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');

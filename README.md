@@ -29,6 +29,34 @@ marking read and trashing — both things ignotifier struggles with.
 3. **Paste the token** into the extension's options page and hit *Verify & save*.
    It is checked against Fastmail before it is stored.
 
+## Firefox
+
+One codebase, one manifest, no build step. Load it with:
+
+`about:debugging` → **This Firefox** → **Load Temporary Add-on…** → pick `manifest.json`.
+
+Temporary add-ons are removed when Firefox restarts, and you will need to paste the API
+token again (a different profile means different storage). Firefox 127+ grants the
+declared host permissions at install; they can be revoked ad hoc from `about:addons`, so
+if requests start failing there, check that first.
+
+How the one manifest serves both browsers:
+
+- `background.service_worker` for Chrome, `background.scripts` for Firefox. Firefox MV3
+  supports event pages *only* — it has never supported service workers
+  ([bug 1573659](https://bugzil.la/1573659)) — so both keys are required. `worker.js`
+  guards with `if (typeof importScripts !== 'undefined')`, since Firefox's manifest has
+  already loaded those files by the time it runs.
+- `core/api.js` picks the namespace: Firefox's promise-based APIs live on `browser`,
+  while its `chrome` alias is callback-based and would silently `await` to `undefined`.
+  Preferring `browser` and falling back to `chrome` lands on promises in both, with no
+  polyfill.
+- Notifications stay within the intersection both accept. Firefox supports only `type`,
+  `title`, `message` and `iconUrl`, and only `type: 'basic'` — so the message preview goes
+  into a multi-line `message` rather than `contextMessage`, and `silent` is not sent.
+- Storage change events use the global `storage.onChanged` with an `areaName` check
+  rather than the per-area variant.
+
 ## Where the token lives
 
 In `chrome.storage.local`, which is **unencrypted on disk** in your browser
@@ -95,8 +123,12 @@ survives.
 node test/run.js
 ```
 
-Runs the real `core/` modules against a mocked `chrome.*` and a mocked Fastmail —
-no token, no network. Covers the logged-out and bad-token paths, badge counts,
+Runs the real `core/` modules against a mocked extension API and a mocked Fastmail —
+no token, no network. **Every test runs twice**, once against a simulated Chrome and once
+against a simulated Firefox that exposes only `browser` and rejects the
+NotificationOptions Firefox does not implement. That is what makes the Firefox port
+verifiable without launching Firefox: reintroducing `contextMessage` makes the Firefox
+pass fail while Chrome still succeeds. Covers the logged-out and bad-token paths, badge counts,
 query ordering, backlog suppression, the VIP filter, silencing, the JMAP write
 patches, and transient-failure behaviour.
 

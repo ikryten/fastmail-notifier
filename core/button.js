@@ -1,6 +1,6 @@
 'use strict';
 
-/* Toolbar button. Every chrome.action call lives here so the Firefox port and
+/* Toolbar button. Every api.action call lives here so the Firefox port and
    any future polyfill have exactly one place to land.
 
    Icon states:
@@ -25,7 +25,7 @@ const button = {
 
   async icon(name) {
     try {
-      await chrome.action.setIcon({path: button.paths(name)});
+      await api.action.setIcon({path: button.paths(name)});
     }
     catch (e) {
       // Losing the icon is never worth breaking a poll over.
@@ -34,14 +34,14 @@ const button = {
   },
 
   async badge(text, color) {
-    await chrome.action.setBadgeText({text: String(text || '')});
+    await api.action.setBadgeText({text: String(text || '')});
     if (color) {
-      await chrome.action.setBadgeBackgroundColor({color});
+      await api.action.setBadgeBackgroundColor({color});
     }
   },
 
   async label(text) {
-    await chrome.action.setTitle({title: text});
+    await api.action.setTitle({title: text});
   },
 
   /* A Chrome badge fits about four characters, so counts above 999 are

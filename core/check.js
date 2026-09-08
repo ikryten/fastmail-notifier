@@ -96,7 +96,7 @@ const check = {
     }
 
     // Wake any open popup.
-    chrome.runtime.sendMessage({method: 'update'}).catch(() => {});
+    api.runtime.sendMessage({method: 'update'}).catch(() => {});
   },
 
   async failed(e) {
@@ -104,10 +104,10 @@ const check = {
     if (e.code === 'auth' || e.code === 'scope') {
       // The token is dead or wrong-scoped. Drop cached session state so a
       // corrected token re-bootstraps cleanly, and say so plainly.
-      await chrome.storage.session.remove(['session', 'mailboxes']);
+      await api.storage.session.remove(['session', 'mailboxes']);
       await state.clearResult();
       await button.loggedOut(e.message);
-      chrome.runtime.sendMessage({method: 'update'}).catch(() => {});
+      api.runtime.sendMessage({method: 'update'}).catch(() => {});
       return;
     }
     // Transient: keep the last known good count on screen rather than
@@ -144,10 +144,13 @@ const check = {
     // delivery cannot produce a stack of twenty popups.
     if (wanted.length === 1) {
       const m = wanted[0];
+      const preview = m.preview.slice(0, 120);
+      // The preview goes in `message` rather than `contextMessage`: Firefox
+      // supports neither contextMessage nor silent, and a single multi-line
+      // message renders correctly in both browsers.
       return check.createNotification(m.id, {
         title: m.fromName,
-        message: m.subject,
-        contextMessage: m.preview.slice(0, 120)
+        message: preview ? m.subject + '\n' + preview : m.subject
       });
     }
     return check.createNotification(wanted[0].id, {
@@ -159,10 +162,11 @@ const check = {
   async createNotification(emailId, opts) {
     const id = 'fmc:' + emailId;
     try {
-      await chrome.notifications.create(id, Object.assign({
+      // Keep to the intersection both browsers accept: Firefox supports only
+      // type, title, message and iconUrl, and only type 'basic'.
+      await api.notifications.create(id, Object.assign({
         type: 'basic',
-        iconUrl: chrome.runtime.getURL('/data/icons/red/128.png'),
-        silent: false
+        iconUrl: api.runtime.getURL('/data/icons/red/128.png')
       }, opts));
     }
     catch (e) {

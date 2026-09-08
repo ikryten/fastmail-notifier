@@ -8,6 +8,7 @@
    time this runs -- hence the guard. One codebase, both browsers. */
 if (typeof importScripts !== 'undefined') {
   self.importScripts(
+    '/core/api.js',
     '/core/state.js',
     '/core/jmap.js',
     '/core/button.js',
@@ -22,15 +23,15 @@ if (typeof importScripts !== 'undefined') {
 async function syncPopup(count) {
   const popup = count > 0 ? '/data/popup/index.html' : '';
   try {
-    await chrome.action.setPopup({popup});
+    await api.action.setPopup({popup});
   }
   catch (e) {
     console.warn('[worker] setPopup failed', e);
   }
 }
 
-chrome.storage.session.onChanged.addListener(changes => {
-  if (changes.count) {
+api.storage.onChanged.addListener((changes, area) => {
+  if (area === 'session' && changes.count) {
     syncPopup(changes.count.newValue);
   }
 });
@@ -40,32 +41,32 @@ async function openWebmail(emailId) {
   const url = jmap.webUrl(session, emailId);
   const prefs = await state.prefs();
   if (prefs.openInNewTab) {
-    await chrome.tabs.create({url});
+    await api.tabs.create({url});
   }
   else {
-    const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-    await chrome.tabs.update(tab.id, {url});
+    const [tab] = await api.tabs.query({active: true, currentWindow: true});
+    await api.tabs.update(tab.id, {url});
   }
 }
 
 /* Only fires when the popup is detached, i.e. nothing unread or not connected. */
-chrome.action.onClicked.addListener(async () => {
+api.action.onClicked.addListener(async () => {
   const token = await state.token();
   if (!token) {
-    return chrome.runtime.openOptionsPage();
+    return api.runtime.openOptionsPage();
   }
   await openWebmail();
 });
 
-chrome.notifications.onClicked.addListener(async id => {
+api.notifications.onClicked.addListener(async id => {
   if (!id.startsWith('fmc:')) {
     return;
   }
-  chrome.notifications.clear(id);
+  api.notifications.clear(id);
   await openWebmail(id.slice(4));
 });
 
-chrome.alarms.onAlarm.addListener(async alarm => {
+api.alarms.onAlarm.addListener(async alarm => {
   if (alarm.name !== repeater.NAME) {
     return;
   }
@@ -73,20 +74,20 @@ chrome.alarms.onAlarm.addListener(async alarm => {
   await repeater.build('after-check');
 });
 
-chrome.runtime.onStartup.addListener(() => repeater.reset('startup', 2000));
-chrome.runtime.onInstalled.addListener(() => repeater.reset('installed', 1000));
+api.runtime.onStartup.addListener(() => repeater.reset('startup', 2000));
+api.runtime.onInstalled.addListener(() => repeater.reset('installed', 1000));
 
 /* Coming back to the machine is a good moment to refresh. */
-chrome.idle.setDetectionInterval(300);
-chrome.idle.onStateChanged.addListener(s => {
+api.idle.setDetectionInterval(300);
+api.idle.onStateChanged.addListener(s => {
   if (s === 'active') {
     repeater.reset('idle-exit', 1000);
   }
 });
 
 /* A changed token or period should take effect immediately, not next tick. */
-chrome.storage.local.onChanged.addListener(changes => {
-  if (changes.token || changes.period) {
+api.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && (changes.token || changes.period)) {
     repeater.reset('prefs-changed', 300);
   }
 });
@@ -149,15 +150,15 @@ const handlers = {
 
   async openUrl({url}) {
     // Links clicked inside the message iframe come through here, so the
-    // sandboxed frame never gets to call chrome.tabs itself.
+    // sandboxed frame never gets to call api.tabs itself.
     if (/^https?:\/\//i.test(url)) {
-      await chrome.tabs.create({url});
+      await api.tabs.create({url});
     }
     return {ok: true};
   }
 };
 
-chrome.runtime.onMessage.addListener((request, sender, respond) => {
+api.runtime.onMessage.addListener((request, sender, respond) => {
   const method = request && request.method;
   // `connected` is an internal helper that happens to live on this object.
   const handler = method && method !== 'connected' ? handlers[method] : null;

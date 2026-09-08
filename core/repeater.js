@@ -1,7 +1,7 @@
 'use strict';
 
-/* Scheduling. Uses one-shot chrome.alarms re-armed after every fire rather than a
-   periodic alarm: chrome.alarms clamps periodInMinutes to a 30s floor, and
+/* Scheduling. Uses one-shot api.alarms re-armed after every fire rather than a
+   periodic alarm: api.alarms clamps periodInMinutes to a 30s floor, and
    re-arming ourselves keeps the actual cadence under our control. setTimeout is
    not an option -- it does not survive service-worker teardown. */
 
@@ -20,18 +20,18 @@ const repeater = {
     const delay = typeof delayMs === 'number' ? delayMs : (await repeater.period()) * 1000;
     const when = Date.now() + delay;
 
-    const existing = await chrome.alarms.get(repeater.NAME);
+    const existing = await api.alarms.get(repeater.NAME);
     if (existing && existing.scheduledTime <= when) {
       return console.log('[repeater] keeping earlier alarm, ignoring', reason);
     }
-    await chrome.alarms.create(repeater.NAME, {when});
+    await api.alarms.create(repeater.NAME, {when});
     console.log('[repeater] scheduled in', Math.round(delay / 1000) + 's', 'for', reason);
   },
 
   /* Force a check now, then resume the normal cadence. */
   async reset(reason, delayMs) {
-    await chrome.alarms.clear(repeater.NAME);
-    await chrome.alarms.create(repeater.NAME, {when: Date.now() + (delayMs || 500)});
+    await api.alarms.clear(repeater.NAME);
+    await api.alarms.create(repeater.NAME, {when: Date.now() + (delayMs || 500)});
     console.log('[repeater] reset for', reason);
   }
 };

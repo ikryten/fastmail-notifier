@@ -9,7 +9,10 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 
-function makeStorageArea() {
+let MODE = 'chrome';
+const setMode = m => { MODE = m; };
+
+function makeStorageArea(name, globalListeners) {
   const data = {};
   const listeners = [];
   return {
@@ -29,6 +32,7 @@ function makeStorageArea() {
         data[k] = v;
       }
       listeners.forEach(fn => fn(changes));
+      globalListeners.forEach(fn => fn(changes, name));
     },
     async remove(keys) {
       for (const k of (Array.isArray(keys) ? keys : [keys])) delete data[k];
@@ -37,9 +41,19 @@ function makeStorageArea() {
   };
 }
 
+/* Firefox accepts only these NotificationOptions, and only type 'basic'.
+   Simulating that here is the point of the Firefox mode: it turns a silent
+   cross-browser breakage into a failing test. */
+const FIREFOX_NOTIFICATION_KEYS = ['type', 'title', 'message', 'iconUrl'];
+
 function buildChrome(calls) {
+  const globalListeners = [];
   return {
-    storage: {local: makeStorageArea(), session: makeStorageArea()},
+    storage: {
+      local: makeStorageArea('local', globalListeners),
+      session: makeStorageArea('session', globalListeners),
+      onChanged: {addListener: fn => globalListeners.push(fn)}
+    },
     action: {
       async setIcon(o) { calls.push(['icon', o.path[16]]); },
       async setBadgeText(o) { calls.push(['badge', o.text]); },
@@ -48,7 +62,18 @@ function buildChrome(calls) {
       async setPopup(o) { calls.push(['popup', o.popup]); }
     },
     notifications: {
-      async create(id, o) { calls.push(['notify', id, o.title, o.message]); },
+      async create(id, o) {
+        if (MODE === 'firefox') {
+          const bad = Object.keys(o).filter(k => !FIREFOX_NOTIFICATION_KEYS.includes(k));
+          if (bad.length) {
+            throw new Error('Firefox rejects NotificationOptions: ' + bad.join(', '));
+          }
+          if (o.type !== 'basic') {
+            throw new Error('Firefox supports only type "basic", got ' + o.type);
+          }
+        }
+        calls.push(['notify', id, o.title, o.message]);
+      },
       onClicked: {addListener() {}}
     },
     alarms: {
@@ -144,13 +169,25 @@ function load(server, calls) {
   const sandbox = {console, setTimeout, clearTimeout, AbortController, URL, Intl, Date, Math, JSON, Map, Set, Promise, Object, Array, String, Number, Boolean, Error};
   sandbox.self = sandbox;
   sandbox.globalThis = sandbox;
-  sandbox.chrome = buildChrome(calls);
+
+  const apiObj = buildChrome(calls);
+  // Expose exactly one namespace, as each browser really does: Firefox's
+  // promise-based APIs live on `browser`, and older Chrome has only `chrome`.
+  // core/api.js has to pick the right one with no other help.
+  if (MODE === 'firefox') {
+    sandbox.browser = apiObj;
+  }
+  else {
+    sandbox.chrome = apiObj;
+  }
+  sandbox.__api = apiObj;   // stable handle for assertions, not visible to the code
+
   sandbox.fetch = makeFetch(server);
   vm.createContext(sandbox);
-  for (const f of ['core/state.js', 'core/urls.js', 'core/jmap.js', 'core/button.js', 'core/check.js', 'core/repeater.js']) {
+  for (const f of ['core/api.js', 'core/state.js', 'core/urls.js', 'core/jmap.js', 'core/button.js', 'core/check.js', 'core/repeater.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, {filename: f});
   }
   return sandbox;
 }
 
-module.exports = {load, email, INBOX, TRASH, makeStorageArea};
+module.exports = {load, email, INBOX, TRASH, setMode};

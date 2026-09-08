@@ -84,7 +84,7 @@ $('save').addEventListener('click', async () => {
 
   // Verified in the worker, which holds the host permissions, before we store it.
   // A token that does not work should never make it into storage.
-  const res = await chrome.runtime.sendMessage({method: 'verify', token});
+  const res = await api.runtime.sendMessage({method: 'verify', token});
 
   $('save').disabled = false;
 
@@ -96,7 +96,7 @@ $('save').addEventListener('click', async () => {
   $('token').value = '';
   await paintConnection();
   say($('conn-status'), 'Connected as ' + res.username, 'ok');
-  chrome.runtime.sendMessage({method: 'check'});
+  api.runtime.sendMessage({method: 'check'});
 });
 
 $('replace').addEventListener('click', async () => {
@@ -117,8 +117,8 @@ for (const id of Object.keys(FIELDS)) {
 $('vips').addEventListener('change', persist);
 
 // The worker writes the session once it has bootstrapped, so reflect that.
-chrome.storage.session.onChanged.addListener(changes => {
-  if (changes.session) {
+api.storage.onChanged.addListener((changes, area) => {
+  if (area === 'session' && changes.session) {
     paintConnection();
   }
 });

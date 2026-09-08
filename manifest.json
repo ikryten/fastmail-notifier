@@ -3,14 +3,17 @@
   "name": "Fastmail Checker",
   "version": "0.1.0",
   "description": "Unread-mail badge and preview window for Fastmail.",
-
-  "permissions": ["storage", "alarms", "idle", "notifications"],
+  "permissions": [
+    "storage",
+    "alarms",
+    "idle",
+    "notifications"
+  ],
   "host_permissions": [
     "https://api.fastmail.com/*",
     "https://*.api.fastmail.com/*",
     "https://*.fastmailusercontent.com/*"
   ],
-
   "action": {
     "default_title": "Fastmail Checker",
     "default_icon": {
@@ -20,22 +23,20 @@
       "128": "/data/icons/gray/128.png"
     }
   },
-
   "icons": {
     "16": "/data/icons/red/16.png",
     "32": "/data/icons/red/32.png",
     "48": "/data/icons/red/48.png",
     "128": "/data/icons/red/128.png"
   },
-
   "options_ui": {
     "page": "/data/options/index.html",
     "open_in_tab": true
   },
-
   "background": {
     "service_worker": "worker.js",
     "scripts": [
+      "/core/api.js",
       "/core/state.js",
       "/core/jmap.js",
       "/core/button.js",
@@ -44,7 +45,6 @@
       "/worker.js"
     ]
   },
-
   "browser_specific_settings": {
     "gecko": {
       "id": "fastmail-checker@ikryten.com",

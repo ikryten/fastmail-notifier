@@ -9,21 +9,40 @@ const check = {
      would be worse than no value. */
   running: false,
 
-  /* Anything older than this on first sight is treated as backlog, not new mail --
-     otherwise installing the extension notifies you about every unread message
-     you already have. */
+  /* On a cold start, anything older than this is backlog rather than new mail --
+     otherwise installing the extension announces every unread message you already
+     have. */
   FRESH_MS: 10 * 60 * 1000,
 
+  /* Tolerance applied to the last-check timestamp, covering clock skew and a poll
+     that ran late. */
+  SKEW_MS: 60 * 1000,
+
   async connection(token) {
+    const gen = await state.tokenGen();
+
     let session = await state.session();
-    if (!session) {
-      session = await jmap.bootstrap(token);
-      await state.setSession(session);
+    if (session && session.gen !== gen) {
+      session = null;   // cached under a different token
     }
+    if (!session) {
+      session = Object.assign(await jmap.bootstrap(token), {gen});
+      // Re-read: the token may have changed while we were bootstrapping, and
+      // publishing this session would then pin the new token to the old account.
+      if (await state.tokenGen() === gen) {
+        await state.setSession(session);
+      }
+    }
+
     let mailboxes = await state.mailboxes();
+    if (mailboxes && mailboxes.gen !== gen) {
+      mailboxes = null;
+    }
     if (!mailboxes) {
-      mailboxes = await jmap.mailboxes(token, session);
-      await state.setMailboxes(mailboxes);
+      mailboxes = Object.assign(await jmap.mailboxes(token, session), {gen});
+      if (await state.tokenGen() === gen) {
+        await state.setMailboxes(mailboxes);
+      }
     }
     return {session, mailboxes};
   },
@@ -35,6 +54,12 @@ const check = {
     check.running = true;
     try {
       await check.run(reason);
+    }
+    catch (e) {
+      // run() handles network and JMAP failures itself; anything reaching here is
+      // a storage or toolbar failure. Contain it: the caller reschedules the next
+      // poll, and letting this escape once stopped polling altogether.
+      console.error('[check] unhandled failure', e);
     }
     finally {
       check.running = false;
@@ -67,18 +92,19 @@ const check = {
     const seenSet = new Set(seen);
     const now = Date.now();
 
-    const fresh = result.messages.filter(m => {
-      if (seenSet.has(m.id)) {
-        return false;
-      }
-      // On a cold start every unread message is "unseen"; only announce recent ones.
-      return seen.length === 0
-        ? (now - new Date(m.receivedAt).getTime()) < check.FRESH_MS
-        : true;
-    });
+    /* Absence from seen-ids cannot mean "newly delivered": Email/query returns
+       only the newest page, so once the unread count exceeds LIMIT, reading a
+       recent message rotates an older one into view for the first time. Judging
+       by delivery time as well is what stops that being announced as new mail. */
+    const lastCheck = await state.lastCheckAt();
+    const floor = lastCheck ? lastCheck - check.SKEW_MS : now - check.FRESH_MS;
+
+    const fresh = result.messages.filter(m =>
+      !seenSet.has(m.id) && new Date(m.receivedAt).getTime() >= floor);
 
     await state.setResult(result);
     await state.setSeenIds(result.messages.map(m => m.id).concat(seen));
+    await state.setLastCheckAt(now);
 
     await button.render({
       count: result.count,
@@ -115,10 +141,19 @@ const check = {
     const count = await state.count();
     if (count === state.UNAUTHENTICATED) {
       await button.loggedOut(e.message);
+      return;
     }
-    else {
-      await button.label('Fastmail Checker\nLast check failed: ' + e.message);
-    }
+    // Restore the steady-state icon before the tooltip: run() switched it to the
+    // spinner on the way in, and leaving it there makes a one-off network blip
+    // look like a check that never finishes.
+    const session = await state.session();
+    await button.render({
+      count,
+      username: (session && session.username) || '',
+      prefs: await state.prefs(),
+      flash: false
+    });
+    await button.label('Fastmail Checker\nLast check failed: ' + e.message);
   },
 
   matchesVip(message, prefs) {

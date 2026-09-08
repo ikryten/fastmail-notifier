@@ -46,6 +46,19 @@ function makeStorageArea(name, globalListeners) {
    cross-browser breakage into a failing test. */
 const FIREFOX_NOTIFICATION_KEYS = ['type', 'title', 'message', 'iconUrl'];
 
+function mkEvent() {
+  const listeners = [];
+  return {
+    addListener: fn => listeners.push(fn),
+    async _fire(...args) {
+      for (const fn of listeners) {
+        await fn(...args);
+      }
+    },
+    _count: () => listeners.length
+  };
+}
+
 function buildChrome(calls) {
   const globalListeners = [];
   return {
@@ -55,13 +68,30 @@ function buildChrome(calls) {
       onChanged: {addListener: fn => globalListeners.push(fn)}
     },
     action: {
-      async setIcon(o) { calls.push(['icon', o.path[16]]); },
-      async setBadgeText(o) { calls.push(['badge', o.text]); },
-      async setBadgeBackgroundColor(o) { calls.push(['badgeColor', o.color]); },
-      async setTitle(o) { calls.push(['title', o.title]); },
-      async setPopup(o) { calls.push(['popup', o.popup]); }
+      // Tests add names here to make a specific setter reject, the way the
+      // browser rejects e.g. an unparseable badge colour.
+      _fail: new Set(),
+      async setIcon(o) {
+        if (this._fail.has('icon')) throw new Error('bad icon');
+        calls.push(['icon', o.path[16]]);
+      },
+      async setBadgeText(o) {
+        if (this._fail.has('badgeText')) throw new Error('bad badge text');
+        calls.push(['badge', o.text]);
+      },
+      async setBadgeBackgroundColor(o) {
+        if (this._fail.has('badgeColor')) throw new Error('Invalid color: ' + o.color);
+        calls.push(['badgeColor', o.color]);
+      },
+      async setTitle(o) {
+        if (this._fail.has('title')) throw new Error('bad title');
+        calls.push(['title', o.title]);
+      },
+      async setPopup(o) { calls.push(['popup', o.popup]); },
+      onClicked: mkEvent()
     },
     notifications: {
+      async clear() {},
       async create(id, o) {
         if (MODE === 'firefox') {
           const bad = Object.keys(o).filter(k => !FIREFOX_NOTIFICATION_KEYS.includes(k));
@@ -77,19 +107,25 @@ function buildChrome(calls) {
       onClicked: {addListener() {}}
     },
     alarms: {
-      async get() { return null; },
-      async create(n, o) { calls.push(['alarm', n, Math.round((o.when - Date.now()) / 1000)]); },
-      async clear() {},
-      onAlarm: {addListener() {}}
+      _alarms: {},
+      async get(n) { return this._alarms[n] || null; },
+      async create(n, o) {
+        this._alarms[n] = {name: n, scheduledTime: o.when};
+        calls.push(['alarm', n, Math.round((o.when - Date.now()) / 1000)]);
+      },
+      async clear(n) { delete this._alarms[n]; },
+      async getAll() { return Object.values(this._alarms); },
+      onAlarm: mkEvent()
     },
     runtime: {
       getURL: p => 'chrome-extension://test' + p,
       sendMessage: async () => {},
-      onMessage: {addListener() {}},
-      onStartup: {addListener() {}},
-      onInstalled: {addListener() {}}
+      openOptionsPage: async () => {},
+      onMessage: mkEvent(),
+      onStartup: mkEvent(),
+      onInstalled: mkEvent()
     },
-    idle: {setDetectionInterval() {}, onStateChanged: {addListener() {}}},
+    idle: {setDetectionInterval() {}, onStateChanged: mkEvent()},
     tabs: {async create() {}, async query() { return [{id: 1}]; }, async update() {}}
   };
 }
@@ -165,7 +201,7 @@ function email(id, from, subject, minsAgo) {
 
 /* --- bootstrap a context --- */
 
-function load(server, calls) {
+function load(server, calls, opts) {
   const sandbox = {console, setTimeout, clearTimeout, AbortController, URL, Intl, Date, Math, JSON, Map, Set, Promise, Object, Array, String, Number, Boolean, Error};
   sandbox.self = sandbox;
   sandbox.globalThis = sandbox;
@@ -184,7 +220,12 @@ function load(server, calls) {
 
   sandbox.fetch = makeFetch(server);
   vm.createContext(sandbox);
-  for (const f of ['core/api.js', 'core/state.js', 'core/urls.js', 'core/jmap.js', 'core/button.js', 'core/check.js', 'core/repeater.js']) {
+  const files = ['core/api.js', 'core/state.js', 'core/urls.js', 'core/jmap.js',
+                 'core/button.js', 'core/check.js', 'core/repeater.js'];
+  if (opts && opts.worker) {
+    files.push('worker.js');
+  }
+  for (const f of files) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, {filename: f});
   }
   return sandbox;

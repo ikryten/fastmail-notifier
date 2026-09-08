@@ -36,10 +36,22 @@ self.state = {
     return token || '';
   },
 
+  /* Bumped on every token change. Cached session/mailbox data is stamped with the
+     generation it was built under, so a bootstrap still in flight when the token
+     changes cannot publish the old account's apiUrl/accountId over the new one --
+     a mismatch that JMAP reports as an ordinary method error, which check.failed
+     treats as transient and would therefore never clear. */
+  async tokenGen() {
+    const {'token-gen': gen} = await api.storage.local.get('token-gen');
+    return gen || 0;
+  },
+
   async setToken(token) {
-    await api.storage.local.set({token});
-    // A new token invalidates everything we cached about the old one.
+    const gen = (await state.tokenGen()) + 1;
+    // Drop the old cache before publishing the new token, so no reader can pair
+    // the new token with stale session data.
     await api.storage.session.remove(['session', 'mailboxes']);
+    await api.storage.local.set({token, 'token-gen': gen});
   },
 
   /* --- session-scoped (dies with the browser, which is what we want) --- */
@@ -84,8 +96,21 @@ self.state = {
     const {'seen-ids': ids} = await api.storage.local.get('seen-ids');
     return Array.isArray(ids) ? ids : [];
   },
+  /* Deduplicated before the cap: the caller prepends the current page every poll,
+     so without this the same ids repeat until they evict the genuinely old ones
+     the list exists to remember. */
   async setSeenIds(ids) {
-    return api.storage.local.set({'seen-ids': ids.slice(0, 500)});
+    return api.storage.local.set({'seen-ids': [...new Set(ids)].slice(0, 500)});
+  },
+
+  /* When the last poll completed. Used to decide what counts as newly delivered,
+     which "not in seen-ids" cannot answer once the unread count exceeds one page. */
+  async lastCheckAt() {
+    const {'last-check-at': t} = await api.storage.local.get('last-check-at');
+    return t || 0;
+  },
+  async setLastCheckAt(t) {
+    return api.storage.local.set({'last-check-at': t});
   },
 
   /* Notification silencing: an absolute epoch-ms deadline. */

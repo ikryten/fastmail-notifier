@@ -33,15 +33,33 @@ const button = {
     }
   },
 
+  /* Cosmetic calls are individually guarded. The toolbar is the least important
+     thing a poll does, and a rejected setter here used to propagate out of
+     check.run() and abort the alarm rearm -- stopping polling entirely. */
   async badge(text, color) {
-    await api.action.setBadgeText({text: String(text || '')});
-    if (color) {
-      await api.action.setBadgeBackgroundColor({color});
+    try {
+      await api.action.setBadgeText({text: String(text || '')});
+      if (color) {
+        await api.action.setBadgeBackgroundColor({color});
+      }
+    }
+    catch (e) {
+      console.warn('[button] badge failed', e);
+      // An unusable colour should not also cost us the count.
+      try {
+        await api.action.setBadgeText({text: String(text || '')});
+      }
+      catch (ignored) {}
     }
   },
 
   async label(text) {
-    await api.action.setTitle({title: text});
+    try {
+      await api.action.setTitle({title: text});
+    }
+    catch (e) {
+      console.warn('[button] setTitle failed', e);
+    }
   },
 
   /* A Chrome badge fits about four characters, so counts above 999 are

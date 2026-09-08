@@ -75,6 +75,14 @@ effect.
 
 ## Two things that look like problems but aren't
 
+**Sub-30-second alarms do not exist in a packaged Chrome extension.** Chrome clamps
+`alarms` to a 30 second floor, and `when` values nearer than that are honoured silently
+late — but *unpacked extensions are exempt*, so a short alarm looks instant in
+development and becomes a half-minute wait once packaged. Anything that must happen now
+(re-checking after marking read, a token change, waking from idle) therefore runs
+in-process via `check.execute()`; alarms carry only the durable periodic schedule. See
+`core/repeater.js`.
+
 **Each browser warns about the other's background key.** Chrome says
 `'background.scripts' requires manifest version of 2 or lower`; Mozilla's `web-ext lint`
 says `BACKGROUND_SERVICE_WORKER_IGNORED`. Both are expected and neither is a defect —
@@ -114,6 +122,15 @@ survives.
   have custom folders.
 - **Never hardcode the API host.** The session object returns a region-specific
   `apiUrl` (e.g. `phl.api.fastmail.com`).
+- **Cached session data is stamped with a token generation.** Changing the token bumps a
+  counter; a bootstrap already in flight will not publish its result if the counter moved
+  underneath it. Without this, replacing the token mid-poll could pair the new token with
+  the old account's `apiUrl`/`accountId` — a mismatch JMAP reports as an ordinary method
+  error, which is treated as transient and so would never clear itself.
+- **"New mail" is judged by delivery time, not just by an unseen id.** `Email/query`
+  returns only the newest page, so once the unread count exceeds `LIMIT`, reading a recent
+  message rotates an older one into view for the first time. Comparing `receivedAt`
+  against the last successful check is what stops that being announced as new.
 - **Nothing mutable in module scope.** The MV3 service worker is torn down
   constantly; state lives in `chrome.storage.session` / `.local`, behind
   `core/state.js`.

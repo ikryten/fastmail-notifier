@@ -68,6 +68,16 @@ async function persist() {
   }
   o.period = Math.max(30, Math.min(3600, Number(o.period) || 60));
   $('period').value = o.period;
+
+  // An unusable colour is rejected by the browser, and that rejection used to
+  // propagate out of the poll and stop it rescheduling. Never store one.
+  if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(o.badgeColor).trim())) {
+    o.badgeColor = state.DEFAULTS.badgeColor;
+  }
+  else {
+    o.badgeColor = String(o.badgeColor).trim();
+  }
+  $('badgeColor').value = o.badgeColor;
   o.vips = $('vips').value.split('\n').map(s => s.trim().toLowerCase()).filter(Boolean);
   await state.setPrefs(o);
   flashSaved();

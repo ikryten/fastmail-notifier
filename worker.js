@@ -70,25 +70,32 @@ api.alarms.onAlarm.addListener(async alarm => {
   if (alarm.name !== repeater.NAME) {
     return;
   }
-  await check.execute('alarm');
-  await repeater.build('after-check');
+  try {
+    await check.execute('alarm');
+  }
+  finally {
+    // Rearming must survive a failed check: this is the only path that keeps the
+    // periodic schedule alive, so losing it once stops polling until some other
+    // event happens to recreate an alarm.
+    await repeater.build('after-check');
+  }
 });
 
-api.runtime.onStartup.addListener(() => repeater.reset('startup', 2000));
-api.runtime.onInstalled.addListener(() => repeater.reset('installed', 1000));
+api.runtime.onStartup.addListener(() => repeater.reset('startup'));
+api.runtime.onInstalled.addListener(() => repeater.reset('installed'));
 
 /* Coming back to the machine is a good moment to refresh. */
 api.idle.setDetectionInterval(300);
 api.idle.onStateChanged.addListener(s => {
   if (s === 'active') {
-    repeater.reset('idle-exit', 1000);
+    repeater.reset('idle-exit');
   }
 });
 
 /* A changed token or period should take effect immediately, not next tick. */
 api.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (changes.token || changes.period)) {
-    repeater.reset('prefs-changed', 300);
+    repeater.reset('prefs-changed');
   }
 });
 
@@ -127,14 +134,14 @@ const handlers = {
   async markRead({ids}) {
     const {token, session} = await handlers.connected();
     await jmap.markRead(token, session, ids);
-    await repeater.reset('mark-read', 400);
+    await repeater.reset('mark-read');
     return {ok: true};
   },
 
   async trash({ids}) {
     const {token, session, mailboxes} = await handlers.connected();
     await jmap.trash(token, session, mailboxes, ids);
-    await repeater.reset('trash', 400);
+    await repeater.reset('trash');
     return {ok: true};
   },
 

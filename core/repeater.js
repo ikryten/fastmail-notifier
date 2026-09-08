@@ -28,11 +28,20 @@ const repeater = {
     console.log('[repeater] scheduled in', Math.round(delay / 1000) + 's', 'for', reason);
   },
 
-  /* Force a check now, then resume the normal cadence. */
-  async reset(reason, delayMs) {
+  /* Check now, then resume the normal cadence.
+
+     Deliberately not "schedule an alarm a few hundred ms out": Chrome clamps
+     alarms to a 30 second floor in packaged extensions, and `when` values nearer
+     than that are honoured silently late. Unpacked extensions are exempt, so that
+     delay is invisible during development and would only appear once packaged --
+     turning "the badge updates as soon as you mark something read" into a
+     half-minute wait. Immediate work therefore runs in-process, and alarms carry
+     only the durable periodic schedule. */
+  async reset(reason) {
     await api.alarms.clear(repeater.NAME);
-    await api.alarms.create(repeater.NAME, {when: Date.now() + (delayMs || 500)});
-    console.log('[repeater] reset for', reason);
+    console.log('[repeater] immediate check for', reason);
+    await check.execute(reason);
+    await repeater.build(reason + '.rearm');
   }
 };
 

@@ -6,7 +6,12 @@ function ok(name, cond, extra) {
   if (cond) { pass++; console.log('  \x1b[32mPASS\x1b[0m ' + name); }
   else { fail++; console.log('  \x1b[31mFAIL\x1b[0m ' + name + (extra ? '\n       ' + extra : '')); }
 }
-function eq(name, a, b) { ok(name, JSON.stringify(a) === JSON.stringify(b), 'got ' + JSON.stringify(a) + '\n       want ' + JSON.stringify(b)); }
+const settle = async ctx => {
+  for (let i = 0; i < 200 && ctx.check.running; i++) {
+    await new Promise(r => setTimeout(r, 1));
+  }
+};
+function eq(name, a, b, extra) { ok(name, JSON.stringify(a) === JSON.stringify(b), 'got ' + JSON.stringify(a) + '\n       want ' + JSON.stringify(b) + (extra ? '\n       ' + extra : '')); }
 
 (async () => {
 for (const mode of ['chrome', 'firefox']) {
@@ -213,6 +218,148 @@ console.log('\n12. extension API namespace resolution');
        typeof ctx.chrome === 'object' && typeof ctx.browser === 'undefined');
     ok('api is `chrome`', ctx.api === ctx.chrome);
   }
+}
+
+console.log('\n13. review #1: a failing toolbar call must not stop polling');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: [email('E1', 'a@x.com', 's', 1)]};
+  const calls = [];
+  const ctx = load(server, calls, {worker: true});
+  await ctx.__api.storage.local.set({token: 'good'});
+  await settle(ctx);
+  // The browser rejects an unparseable badge colour; that used to propagate out
+  // of check.run() and abort the alarm rearm.
+  ctx.__api.action._fail.add('badgeColor');
+  ctx.__api.alarms._alarms = {};
+
+  let escaped = null;
+  try {
+    await ctx.__api.alarms.onAlarm._fire({name: ctx.repeater.NAME});
+  }
+  catch (e) {
+    escaped = e;   // unfixed code propagates the rejection out of the handler
+  }
+  ok('the failure did not escape the alarm handler', !escaped,
+     escaped && String(escaped.message));
+  ok('the poll still completed', (await ctx.state.count()) === 1);
+  ok('the next alarm was still scheduled',
+     Boolean(await ctx.__api.alarms.get(ctx.repeater.NAME)),
+     'alarms: ' + JSON.stringify(ctx.__api.alarms._alarms));
+  ok('the count still reached the badge despite the colour failing',
+     calls.some(c => c[0] === 'badge' && c[1] === '1'));
+}
+
+console.log('\n14. review #2: immediate rechecks do not rely on sub-30s alarms');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: [email('E1', 'a@x.com', 's', 1)]};
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.__api.storage.local.set({token: 'good'});
+  calls.length = 0;
+
+  await ctx.repeater.reset('mark-read');
+
+  // Chrome clamps alarms to 30s in packaged extensions, so "check shortly"
+  // cannot be an alarm; it has to have happened in-process by now.
+  ok('the check ran in-process, not via a short alarm', (await ctx.state.count()) === 1);
+  const scheduled = calls.filter(c => c[0] === 'alarm').map(c => c[2]);
+  ok('no alarm was scheduled inside Chrome’s 30s clamp',
+     scheduled.every(sec => sec >= 30), 'scheduled at (s): ' + JSON.stringify(scheduled));
+  ok('the periodic schedule was re-established', scheduled.length > 0);
+}
+
+console.log('\n15. review #3: changing the token mid-bootstrap cannot pin the old account');
+{
+  const server = {token: 'old', requests: [], sets: [], unread: []};
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.state.setToken('old');
+
+  // Hold the session bootstrap open, change the token, then let it finish.
+  let release;
+  const gate = new Promise(r => (release = r));
+  const realFetch = ctx.fetch;
+  ctx.fetch = async (url, opts) => {
+    if (url.includes('/jmap/session')) {
+      await gate;
+    }
+    return realFetch(url, opts);
+  };
+
+  const inflight = ctx.check.execute('slow');
+  await ctx.state.setToken('new');          // token replaced mid-bootstrap
+  server.token = 'new';
+  release();
+  await inflight;
+
+  const cached = await ctx.state.session();
+  ok('the stale bootstrap did not publish its session',
+     !cached || cached.gen === (await ctx.state.tokenGen()),
+     'cached: ' + JSON.stringify(cached));
+
+  // And the next check must recover on its own rather than stay wedged.
+  await ctx.check.execute('after');
+  const after = await ctx.state.session();
+  eq('the next check bootstraps under the current generation',
+     after.gen, await ctx.state.tokenGen());
+}
+
+console.log('\n16. review #4: a backlog rotating into view is not new mail');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.__api.storage.local.set({token: 'good'});
+
+  // A full page of old unread mail, plus older ones waiting behind it.
+  const page = [];
+  for (let i = 0; i < 50; i++) {
+    page.push(email('N' + i, 'a@x.com', 'recent ' + i, 100 + i));
+  }
+  const behind = [email('OLD1', 'b@x.com', 'ancient', 5000),
+                  email('OLD2', 'b@x.com', 'ancient too', 5001)];
+  server.unread = page;
+  await ctx.check.execute('first');
+  const afterFirst = calls.filter(c => c[0] === 'notify').length;
+
+  // Read the newest two: the two ancient ones rotate into the first page.
+  server.unread = page.slice(2).concat(behind);
+  await ctx.check.execute('second');
+  const notifies = calls.filter(c => c[0] === 'notify');
+
+  eq('cold start announced nothing (all backlog)', afterFirst, 0);
+  eq('rotated-in old mail is not announced as new', notifies.length, 0,
+     'notifications: ' + JSON.stringify(notifies));
+
+  // ...while genuinely new mail still is.
+  server.unread = [email('BRANDNEW', 'z@x.com', 'just arrived', 0)].concat(server.unread);
+  await ctx.check.execute('third');
+  const after3 = calls.filter(c => c[0] === 'notify');
+  eq('genuinely new mail is still announced', after3.length, 1);
+  ok('and it is the new one', /just arrived/.test(after3[0][3]));
+
+  const seen = await ctx.state.seenIds();
+  eq('seen-ids carry no duplicates', seen.length, new Set(seen).size);
+}
+
+console.log('\n17. review #5: a transient failure leaves a steady icon, not the spinner');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: [email('E1', 'a@x.com', 's', 1)]};
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.__api.storage.local.set({token: 'good'});
+  await ctx.check.execute('seed');
+
+  calls.length = 0;
+  ctx.fetch = async () => { throw new Error('offline'); };
+  await ctx.check.execute('offline');
+
+  const icons = calls.filter(c => c[0] === 'icon').map(c => c[1]);
+  ok('an icon was set after the failure', icons.length > 0);
+  ok('and it is not left on the loading spinner',
+     !/\/load\//.test(icons[icons.length - 1]), 'icons: ' + JSON.stringify(icons));
+  ok('the last known count survived', (await ctx.state.count()) === 1);
+  ok('the tooltip explains', calls.some(c => c[0] === 'title' && /Last check failed/.test(c[1])));
 }
 
 }

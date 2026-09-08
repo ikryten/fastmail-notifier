@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fastmail Checker options</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1f1f1f;
+  --muted: #5f6368;
+  --line: #dadce0;
+  --field: #ffffff;
+  --accent: #1a73e8;
+  --ok: #1e8e3e;
+  --bad: #d93025;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1f1f1f; --fg: #e8eaed; --muted: #9aa0a6;
+    --line: #3c4043; --field: #2d2e30; --accent: #8ab4f8;
+    --ok: #81c995; --bad: #f28b82;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 32px 24px 64px;
+  background: var(--bg); color: var(--fg);
+  font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+main { max-width: 620px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 4px; font-weight: 600; }
+.sub { color: var(--muted); margin: 0 0 28px; }
+section {
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 20px; margin-bottom: 20px;
+}
+h2 { font-size: 14px; margin: 0 0 14px; font-weight: 600; letter-spacing: .01em; }
+label { display: block; margin-bottom: 6px; font-weight: 500; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+.hint a { color: var(--accent); }
+input[type=text], input[type=password], input[type=number], textarea {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--field); color: var(--fg);
+  font: inherit;
+}
+textarea { resize: vertical; min-height: 68px; }
+input[type=number] { width: 120px; }
+.row { display: flex; gap: 10px; align-items: flex-start; }
+.row > input { flex: 1; }
+button {
+  padding: 9px 16px; border-radius: 7px; border: 1px solid transparent;
+  background: var(--accent); color: #fff; font: inherit; font-weight: 500;
+  cursor: pointer; white-space: nowrap;
+}
+@media (prefers-color-scheme: dark) { button { color: #202124; } }
+button.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+button:disabled { opacity: .5; cursor: default; }
+.check { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; font-weight: 400; }
+.check input { margin: 0; }
+.status { margin-top: 12px; font-size: 13px; min-height: 19px; }
+.status.ok { color: var(--ok); }
+.status.bad { color: var(--bad); }
+.token-set {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 13px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--field);
+}
+.token-set code { font-size: 13px; letter-spacing: .06em; }
+.token-set .who { color: var(--muted); font-size: 12.5px; margin-left: auto; }
+.indent { margin-left: 27px; }
+footer { color: var(--muted); font-size: 12.5px; text-align: center; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fastmail Checker</h1>
+  <p class="sub">Unread-mail badge and preview window for Fastmail.</p>
+
+  <section>
+    <h2>Connection</h2>
+
+    <div id="token-entry">
+      <label for="token">Fastmail API token</label>
+      <div class="row">
+        <input type="password" id="token" autocomplete="off" spellcheck="false"
+               placeholder="Paste your API token">
+        <button id="save">Verify &amp; save</button>
+      </div>
+      <p class="hint">
+        Create one in Fastmail under
+        <a href="https://app.fastmail.com/settings/security/tokens" target="_blank"
+           rel="noreferrer">Settings &rarr; Privacy &amp; Security &rarr; API tokens</a>,
+        with the <strong>Mail</strong> scope. Read-only works for the badge, but
+        marking read and moving to Trash need read-write.
+      </p>
+    </div>
+
+    <div id="token-set" class="token-set" hidden>
+      <code id="token-mask"></code>
+      <span class="who" id="token-who"></span>
+      <button class="ghost" id="replace">Replace</button>
+    </div>
+
+    <p class="status" id="conn-status"></p>
+
+    <p class="hint" id="revoke-hint" hidden>
+      The token is stored unencrypted in this browser profile, like any extension
+      setting. If this machine is ever compromised,
+      <a href="https://app.fastmail.com/settings/security/tokens" target="_blank"
+         rel="noreferrer">revoke it here</a> &mdash; it takes effect immediately.
+    </p>
+  </section>
+
+  <section>
+    <h2>Checking</h2>
+    <label for="period">Check every (seconds)</label>
+    <input type="number" id="period" min="30" max="3600" step="10">
+    <p class="hint">Minimum 30 seconds. One small API request per check.</p>
+  </section>
+
+  <section>
+    <h2>Toolbar badge</h2>
+    <div class="check">
+      <input type="checkbox" id="badge">
+      <label for="badge" style="margin:0">Show the unread count on the icon</label>
+    </div>
+    <label for="badgeColor">Badge colour</label>
+    <input type="text" id="badgeColor" placeholder="#d93025">
+  </section>
+
+  <section>
+    <h2>Notifications</h2>
+    <div class="check">
+      <input type="checkbox" id="notifications">
+      <label for="notifications" style="margin:0">Show a desktop notification for new mail</label>
+    </div>
+    <div class="check indent">
+      <input type="checkbox" id="notifyVipOnly">
+      <label for="notifyVipOnly" style="margin:0">Only for senders on my VIP list</label>
+    </div>
+    <div class="indent">
+      <label for="vips">VIP senders</label>
+      <textarea id="vips" spellcheck="false"
+                placeholder="one per line &mdash; an address or any part of one, e.g.&#10;alice@example.com&#10;@work-domain.com"></textarea>
+    </div>
+  </section>
+
+  <section>
+    <h2>Behaviour</h2>
+    <div class="check">
+      <input type="checkbox" id="openInNewTab">
+      <label for="openInNewTab" style="margin:0">Open Fastmail in a new tab</label>
+    </div>
+  </section>
+
+  <footer><span id="saved"></span></footer>
+</main>
+<script src="/core/state.js"></script>
+<script src="index.js"></script>
+</body>
+</html>

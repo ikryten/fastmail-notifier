@@ -153,7 +153,7 @@ const check = {
       prefs: await state.prefs(),
       flash: false
     });
-    await button.label('Fastmail Checker\nLast check failed: ' + e.message);
+    await button.label(button.APP + '\nLast check failed: ' + e.message);
   },
 
   matchesVip(message, prefs) {

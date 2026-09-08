@@ -1,4 +1,4 @@
-# Fastmail Checker
+# Fastmail Notifier
 
 An unread-mail notifier for Fastmail, in the spirit of
 [ignotifier](https://github.com/inbasic/ignotifier): a toolbar badge with the

@@ -14,6 +14,10 @@
 const button = {
   AMBER: '#f9ab00',
 
+  /* The manifest is the single source of truth for the name, so renaming the
+     extension is a one-line change there rather than a hunt through tooltips. */
+  APP: api.runtime.getManifest().name,
+
   paths(name) {
     return {
       16: '/data/icons/' + name + '/16.png',
@@ -77,7 +81,7 @@ const button = {
   async loggedOut(reason) {
     await button.icon('gray');
     await button.badge('!', button.AMBER);
-    await button.label('Fastmail Checker\n' + (reason || 'Not connected. Open options to add an API token.'));
+    await button.label(button.APP + '\n' + (reason || 'Not connected. Open options to add an API token.'));
   },
 
   async checking() {
@@ -88,12 +92,12 @@ const button = {
     if (count > 0) {
       await button.icon(flash ? 'new' : 'red');
       await button.badge(prefs.badge ? button.format(count) : '', prefs.badgeColor);
-      await button.label('Fastmail Checker\n' + username + '\n' + count + ' unread');
+      await button.label(button.APP + '\n' + username + '\n' + count + ' unread');
     }
     else {
       await button.icon('gray');
       await button.badge('');
-      await button.label('Fastmail Checker\n' + username + '\nNo unread mail');
+      await button.label(button.APP + '\n' + username + '\nNo unread mail');
     }
   }
 };

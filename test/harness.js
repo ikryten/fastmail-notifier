@@ -119,6 +119,9 @@ function buildChrome(calls) {
     },
     runtime: {
       getURL: p => 'chrome-extension://test' + p,
+      // Read the real manifest rather than a literal, so the name the code shows
+      // is the name the manifest actually declares.
+      getManifest: () => JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')),
       sendMessage: async () => {},
       openOptionsPage: async () => {},
       onMessage: mkEvent(),

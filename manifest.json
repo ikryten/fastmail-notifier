@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Fastmail Checker",
+  "name": "Fastmail Notifier",
   "version": "0.1.0",
   "description": "Unread-mail badge and preview window for Fastmail.",
   "permissions": [
@@ -15,7 +15,7 @@
     "https://*.fastmailusercontent.com/*"
   ],
   "action": {
-    "default_title": "Fastmail Checker",
+    "default_title": "Fastmail Notifier",
     "default_icon": {
       "16": "/data/icons/gray/16.png",
       "32": "/data/icons/gray/32.png",
@@ -47,7 +47,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "fastmail-checker@ikryten.com",
+      "id": "fastmail-notifier@ikryten.com",
       "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": [

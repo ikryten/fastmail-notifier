@@ -157,8 +157,8 @@ console.log('\n5. popup: remote content honours the preference');
      !/tracker\.example/.test(off), off.slice(0, 500));
   ok('images off: srcset is gone', !/srcset/i.test(off));
   ok('images off: the CSS url() is gone', !/url\(/i.test(off));
-  ok('images off: alt text is shown instead of a broken image',
-     /alt="pix"/.test(off), off.slice(0, 400));
+  ok('images off: the img elements are removed, not left empty',
+     !/<img/i.test(off), off.slice(0, 400));
   ok('images off: the reader is told why', /Remote content blocked/.test(off));
 }
 

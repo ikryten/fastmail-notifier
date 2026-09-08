@@ -112,6 +112,19 @@ function sanitize(html, allowRemote) {
       }
       n.remove();
     });
+
+    /* Remove the images entirely rather than just their src. There is nothing to
+       detect here -- we already know they will not load -- and a src-less <img>
+       still occupies layout: alt text, or an empty box sized by its width/height
+       attributes. The count below tells the reader what was withheld, so nothing
+       is hidden silently. */
+    doc.querySelectorAll('img').forEach(img => {
+      const src = img.getAttribute('src') || '';
+      if (img.hasAttribute('srcset') || /^\s*(https?:)?\/\//i.test(src)) {
+        blocked++;
+        img.remove();
+      }
+    });
   }
 
   for (const el of doc.querySelectorAll('*')) {
@@ -123,9 +136,6 @@ function sanitize(html, allowRemote) {
       // Never kept: it is a second source of remote URLs that safeSrc does not
       // parse, and `src` alone is enough for a preview.
       else if (name === 'srcset') {
-        if (!allowRemote) {
-          blocked++;
-        }
         el.removeAttribute(attr.name);
       }
       else if (name === 'src' && el.tagName === 'IMG') {
@@ -134,11 +144,9 @@ function sanitize(html, allowRemote) {
           el.setAttribute('src', safe);
         }
         else {
-          // Removed rather than left dangling, so the sender's alt text shows
-          // instead of an unexplained broken-image icon.
-          if (!allowRemote && /^\s*(https?:)?\/\//i.test(attr.value)) {
-            blocked++;
-          }
+          // Left dangling would render a broken-image icon; remote ones were
+          // already removed above when blocking, so this covers unresolvable
+          // sources such as a relative path.
           el.removeAttribute('src');
         }
       }

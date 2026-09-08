@@ -119,8 +119,12 @@ means opening one can fire a tracking pixel. **Options → Message preview → L
 images** turns it off, after which a preview makes no request to the sender at all:
 `src`, `srcset`, `<style>` blocks and inline `style` declarations containing `url()` are
 all stripped, since CSS can fetch remote URLs just as readily as an `<img>`. Blocked
-images have their `src` removed rather than left dangling, so the sender's alt text shows
-instead of a broken icon, and a one-line notice explains what happened.
+images are **removed entirely** rather than just losing their `src` — a src-less `<img>`
+still takes up layout as alt text or an empty box sized by its `width`/`height`. A
+one-line notice reports how many were withheld, so nothing disappears silently.
+
+No probing is involved: with the setting off there is nothing to detect, because the
+images are never requested in the first place.
 
 Inline `cid:` attachments still display either way — those come from Fastmail over an
 authenticated request, not from the sender's server.

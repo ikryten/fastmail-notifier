@@ -10,6 +10,7 @@ if (typeof importScripts !== 'undefined') {
   self.importScripts(
     '/core/api.js',
     '/core/state.js',
+    '/core/folders.js',
     '/core/jmap.js',
     '/core/button.js',
     '/core/check.js',
@@ -19,9 +20,14 @@ if (typeof importScripts !== 'undefined') {
 
 /* The popup only exists when it has something to show. With nothing unread,
    detaching it makes a click open the webmail instead of an empty window --
-   the same trick ignotifier uses, and it is a genuinely nice bit of UX. */
-async function syncPopup(count) {
-  const popup = count > 0 ? '/data/popup/index.html' : '';
+   the same trick ignotifier uses, and it is a genuinely nice bit of UX.
+
+   Keyed on the message list, not the badge count. Since the badge may also be
+   summing watched folders, a non-zero badge no longer implies the preview has
+   anything to display -- unread mail sitting only in a watched folder would
+   otherwise attach an empty popup. */
+async function syncPopup() {
+  const popup = (await state.messages()).length ? '/data/popup/index.html' : '';
   try {
     await api.action.setPopup({popup});
   }
@@ -31,8 +37,8 @@ async function syncPopup(count) {
 }
 
 api.storage.onChanged.addListener((changes, area) => {
-  if (area === 'session' && changes.count) {
-    syncPopup(changes.count.newValue);
+  if (area === 'session' && changes.messages) {
+    syncPopup();
   }
 });
 
@@ -131,9 +137,11 @@ api.idle.onStateChanged.addListener(s => {
   }
 });
 
-/* A changed token or period should take effect immediately, not next tick. */
+/* A changed token, period or folder set should take effect immediately, not next
+   tick. Ticking several folders in a row is safe: check.execute coalesces, so a
+   burst collapses into one extra poll. */
 api.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (changes.token || changes.period)) {
+  if (area === 'local' && (changes.token || changes.period || changes.watchFolders)) {
     repeater.reset('prefs-changed');
   }
 });
@@ -163,6 +171,13 @@ const handlers = {
     }
     const {session, mailboxes} = await check.connection(token);
     return {token, session, mailboxes};
+  },
+
+  /* The account's mailboxes, so the options page can offer a folder picker
+     instead of making the user type names. */
+  async folders() {
+    const {mailboxes} = await handlers.connected();
+    return {ok: true, folders: mailboxes.all, inbox: mailboxes.inbox};
   },
 
   async body({id}) {
@@ -226,13 +241,15 @@ api.runtime.onMessage.addListener((request, sender, respond) => {
    those in packaged extensions. */
 (async () => {
   const count = await state.count();
-  await syncPopup(count === state.UNAUTHENTICATED ? 0 : count);
+  await syncPopup();
   if (count === state.UNAUTHENTICATED) {
     return;   // leave the logged-out badge alone
   }
   const session = await state.session();
   await button.render({
     count,
+    inboxCount: await state.inboxCount(),
+    breakdown: await state.breakdown(),
     username: (session && session.username) || '',
     prefs: await state.prefs(),
     flash: false

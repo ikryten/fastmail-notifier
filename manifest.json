@@ -39,6 +39,7 @@
     "scripts": [
       "/core/api.js",
       "/core/state.js",
+      "/core/folders.js",
       "/core/jmap.js",
       "/core/button.js",
       "/core/check.js",

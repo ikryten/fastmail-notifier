@@ -149,6 +149,19 @@ function buildChrome(calls) {
 
 const INBOX = 'MB-inbox', TRASH = 'MB-trash';
 
+/* Deliberately includes nesting and a duplicated leaf name ("Notes" under two
+   different parents), because those are exactly the cases folder resolution has
+   to get right. */
+const MAILBOXES = [
+  {id: INBOX, name: 'Inbox', role: 'inbox', parentId: null},
+  {id: TRASH, name: 'Trash', role: 'trash', parentId: null},
+  {id: 'MB-important', name: 'Important', role: null, parentId: null},
+  {id: 'MB-receipts', name: 'Receipts', role: null, parentId: null},
+  {id: 'MB-family', name: 'Family', role: null, parentId: 'MB-receipts'},
+  {id: 'MB-rnotes', name: 'Notes', role: null, parentId: 'MB-receipts'},
+  {id: 'MB-inotes', name: 'Notes', role: null, parentId: 'MB-important'}
+];
+
 function makeFetch(server) {
   return async function (url, opts) {
     server.requests.push({url, opts});
@@ -184,14 +197,22 @@ function makeFetch(server) {
       : server.unread;
     const responses = body.methodCalls.map(([name, args, tag]) => {
       if (name === 'Mailbox/get' && args.ids === null) {
-        return ['Mailbox/get', {list: [
-          {id: INBOX, name: 'Inbox', role: 'inbox'},
-          {id: TRASH, name: 'Trash', role: 'trash'},
-          {id: 'MB-important', name: 'Important', role: null}
-        ]}, tag];
+        return ['Mailbox/get', {list: MAILBOXES.map(m => ({...m}))}, tag];
       }
       if (name === 'Mailbox/get') {
-        return ['Mailbox/get', {list: [{id: INBOX, unreadEmails: unread.length, totalEmails: 33855}]}, tag];
+        server.lastBoxIds = args.ids;
+        /* Per-folder unread comes from server.folderUnread. An id absent from that
+           map returns no entry at all, which is how a real server answers for a
+           mailbox that has since been deleted -- so `{'MB-x': 0}` and "no MB-x"
+           are distinguishable, and both are worth testing. */
+        const fu = server.folderUnread || {};
+        const list = (args.ids || []).map(id => {
+          if (id === INBOX) {
+            return {id: INBOX, unreadEmails: unread.length, totalEmails: 33855};
+          }
+          return id in fu ? {id, unreadEmails: fu[id], totalEmails: fu[id]} : null;
+        }).filter(Boolean);
+        return ['Mailbox/get', {list}, tag];
       }
       if (name === 'Email/query') {
         server.lastFilter = args.filter;
@@ -247,7 +268,8 @@ function load(server, calls, opts) {
 
   sandbox.fetch = makeFetch(server);
   vm.createContext(sandbox);
-  const files = ['core/api.js', 'core/state.js', 'core/urls.js', 'core/bodyparts.js', 'core/jmap.js',
+  const files = ['core/api.js', 'core/state.js', 'core/urls.js', 'core/bodyparts.js',
+                 'core/folders.js', 'core/jmap.js',
                  'core/button.js', 'core/check.js', 'core/repeater.js'];
   if (opts && opts.worker) {
     files.push('worker.js');
@@ -258,4 +280,4 @@ function load(server, calls, opts) {
   return sandbox;
 }
 
-module.exports = {load, email, INBOX, TRASH, setMode};
+module.exports = {load, email, INBOX, TRASH, MAILBOXES, setMode};

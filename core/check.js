@@ -91,10 +91,16 @@ const check = {
 
     await button.checking();
 
-    let session, mailboxes, result;
+    const prefs = await state.prefs();
+
+    let session, mailboxes, result, watched;
     try {
       ({session, mailboxes} = await check.connection(token));
-      result = await jmap.poll(token, session, mailboxes);
+      /* Folders the user asked to have counted. Resolved every poll rather than
+         cached: the mailbox list is refreshed with the session, and a folder
+         renamed in Fastmail should start or stop matching without a restart. */
+      watched = folders.resolve(mailboxes.all, prefs.watchFolders, mailboxes.inbox);
+      result = await jmap.poll(token, session, mailboxes, watched.ids);
     }
     catch (e) {
       return check.failed(e);
@@ -110,7 +116,6 @@ const check = {
       return;
     }
 
-    const prefs = await state.prefs();
     const seen = await state.seenIds();
     const seenSet = new Set(seen);
     const now = Date.now();
@@ -125,23 +130,38 @@ const check = {
     const fresh = result.messages.filter(m =>
       !seenSet.has(m.id) && new Date(m.receivedAt).getTime() >= floor);
 
-    await state.setResult(result);
+    /* Label the watched counts for the tooltip. A folder that vanished between
+       caching the list and the poll is simply absent from result.watched, so it
+       contributes nothing rather than a phantom zero. */
+    const byId = new Map(watched.matched.map(m => [m.id, m]));
+    const breakdown = result.watched.map(w => ({
+      name: (byId.get(w.id) || {}).path || w.id,
+      unread: w.unread
+    }));
+
+    await state.setResult({
+      count: result.count,
+      inboxCount: result.inbox,
+      messages: result.messages,
+      breakdown
+    });
     await state.setSeenIds(result.messages.map(m => m.id).concat(seen));
     await state.setLastCheckAt(now);
 
-    await button.render({
+    const paint = flash => button.render({
       count: result.count,
+      inboxCount: result.inbox,
+      breakdown,
       username: session.username,
       prefs,
-      flash: fresh.length > 0
+      flash
     });
+    await paint(fresh.length > 0);
 
     if (fresh.length) {
       await check.notify(fresh, prefs);
       // Settle back to the steady-state icon after the flash.
-      setTimeout(() => button.render({
-        count: result.count, username: session.username, prefs, flash: false
-      }), 2500);
+      setTimeout(() => paint(false), 2500);
     }
 
     // Wake any open popup.
@@ -172,6 +192,8 @@ const check = {
     const session = await state.session();
     await button.render({
       count,
+      inboxCount: await state.inboxCount(),
+      breakdown: await state.breakdown(),
       username: (session && session.username) || '',
       prefs: await state.prefs(),
       flash: false

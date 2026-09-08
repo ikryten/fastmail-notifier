@@ -124,6 +124,42 @@ Chrome adds one of those itself for any extension declaring `options_ui`; Firefo
 not, so the item is created only on Gecko — detected with `runtime.getBrowserInfo`, a
 Firefox-only API, rather than by sniffing the user agent.
 
+## Counting folders other than the Inbox
+
+The badge counts the Inbox by default. **Options → Folders counted on the badge** adds
+others: tick a folder and its unread mail is included in the number.
+
+This costs nothing extra. Each poll already issues a `Mailbox/get` to read the Inbox's
+`unreadEmails`, so watched folders simply ride along in the same call's `ids` array —
+one HTTP round trip per poll, however many folders are ticked.
+
+**Only the number changes.** The preview window and the notifications stay Inbox-only:
+`Email/query` is still filtered to `inMailbox: <inbox>`, and no message bodies are
+fetched for watched folders. Once the badge is summing more than the Inbox, the tooltip
+breaks the total down per folder — otherwise the badge disagrees with the preview and
+looks like a bug. And because a non-zero badge no longer implies the preview has anything
+to show, the popup is attached based on the *message list* rather than the count; unread
+mail sitting only in a watched folder leaves a click opening webmail instead of an empty
+window.
+
+The picker is populated from the account's own mailbox list (`Mailbox/get` with
+`ids: null`, which the session already fetches and caches). If that list cannot be
+reached — no token yet, or Fastmail unreachable — the section falls back to a
+comma-separated text field. Both write the same setting, so nothing is lost either way.
+
+What gets stored is **names, not mailbox ids**. Ids are opaque and account-scoped: stored
+ids would quietly stop matching the moment the token pointed at a different account, with
+nothing on screen to explain the wrong number. A full `Parent/Child` path always wins; a
+bare leaf name matches only when it is unique across the account, since two folders both
+called `Notes` are genuinely ambiguous and silently picking one would put a wrong number
+on the badge. Names that match nothing — a renamed folder, a deleted one, an ambiguous
+leaf — are listed in the picker as **not found** and left ticked, so a setting you made
+stays visible and is removed deliberately rather than vanishing.
+
+One caveat worth knowing: the counts come from each mailbox's own `unreadEmails`, so a
+message filed in two watched folders is counted twice. Deduplicating would mean querying
+the messages themselves, which is a great deal more work than the badge is worth.
+
 ## Privacy: remote images
 
 Previews load remote images by default, so mail looks the way the sender intended. That
@@ -203,7 +239,7 @@ NotificationOptions Firefox does not implement. That is what makes the Firefox p
 verifiable without launching Firefox: reintroducing `contextMessage` makes the Firefox
 pass fail while Chrome still succeeds. Covers the logged-out and bad-token paths, badge counts,
 query ordering, backlog suppression, the VIP filter, silencing, the JMAP write
-patches, and transient-failure behaviour.
+patches, folder-name resolution and badge summing, and transient-failure behaviour.
 
 ## Status
 
@@ -217,6 +253,7 @@ Working in both browsers from one codebase, with no build step and no dependenci
 | Mark read | verified | verified |
 | Desktop notifications | verified | verified |
 | Move to Trash, deep links | verified | untested (same code path as mark read) |
+| Extra folders on the badge | untested | untested |
 
 **Polling is the intended design, not a placeholder.** JMAP push via `eventSourceUrl`
 was considered and deliberately declined. It would cut badge latency to near zero, but a

@@ -17,6 +17,10 @@ self.state = {
     // stops previews making any sender-controlled request.
     loadRemoteImages: true,
     vips: [],                 // lowercase substrings matched against the From address
+    /* Extra folders whose unread mail is added to the badge, stored as names or
+       "Parent/Child" paths rather than mailbox ids -- see core/folders.js for why.
+       The inbox is always counted and is never listed here. */
+    watchFolders: [],
     openInNewTab: true
   },
 
@@ -75,9 +79,23 @@ self.state = {
     return api.storage.session.set({mailboxes});
   },
 
+  /* The badge number: inbox unread plus every watched folder. */
   async count() {
     const {count} = await api.storage.session.get('count');
     return typeof count === 'number' ? count : 0;
+  },
+
+  /* The inbox alone. What the preview window can actually show, which is why it
+     -- not `count` -- decides whether the popup is attached. */
+  async inboxCount() {
+    const {'inbox-count': n} = await api.storage.session.get('inbox-count');
+    return typeof n === 'number' ? n : 0;
+  },
+
+  /* Per-folder unread, for the tooltip: [{name, unread}]. */
+  async breakdown() {
+    const {breakdown} = await api.storage.session.get('breakdown');
+    return Array.isArray(breakdown) ? breakdown : [];
   },
 
   async messages() {
@@ -85,12 +103,18 @@ self.state = {
     return messages || [];
   },
 
-  async setResult({count, messages}) {
-    return api.storage.session.set({count, messages});
+  async setResult({count, inboxCount, messages, breakdown}) {
+    return api.storage.session.set({
+      count, messages,
+      'inbox-count': inboxCount,
+      breakdown: breakdown || []
+    });
   },
 
   async clearResult() {
-    return api.storage.session.set({count: self.state.UNAUTHENTICATED, messages: []});
+    return api.storage.session.set({
+      count: self.state.UNAUTHENTICATED, messages: [], 'inbox-count': 0, breakdown: []
+    });
   },
 
   /* Ids we have already told the user about, so a restart does not

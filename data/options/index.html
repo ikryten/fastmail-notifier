@@ -69,6 +69,16 @@ button:disabled { opacity: .5; cursor: default; }
 .token-set code { font-size: 13px; letter-spacing: .06em; }
 .token-set .who { color: var(--muted); font-size: 12.5px; margin-left: auto; }
 .indent { margin-left: 27px; }
+.folders {
+  max-height: 260px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 7px;
+  padding: 12px 13px; background: var(--field);
+}
+.folders .check { margin-bottom: 8px; }
+.folders .check:last-child { margin-bottom: 0; }
+.folders label { font-weight: 400; }
+.folders .tag { color: var(--muted); font-size: 12px; }
+.folders .tag.bad { color: var(--bad); }
 footer { color: var(--muted); font-size: 12.5px; text-align: center; }
 [hidden] { display: none !important; }
 </style>
@@ -131,6 +141,29 @@ footer { color: var(--muted); font-size: 12.5px; text-align: center; }
   </section>
 
   <section>
+    <h2>Folders counted on the badge</h2>
+    <p class="hint" style="margin-top:0">
+      Your Inbox is always counted. Tick any other folder whose unread mail should
+      be added to the badge. The preview window stays Inbox-only, and so do
+      notifications &mdash; this changes the number, not what you can flip through.
+    </p>
+
+    <div id="folder-list" class="folders" hidden></div>
+
+    <div id="folder-fallback" hidden>
+      <label for="watchFolders">Folders to include</label>
+      <input type="text" id="watchFolders" spellcheck="false"
+             placeholder="Archive, Receipts/Family">
+      <p class="hint">
+        Comma-separated. Use the folder&rsquo;s name, or its full
+        <code>Parent/Child</code> path if two folders share a name.
+      </p>
+    </div>
+
+    <p class="status" id="folder-status"></p>
+  </section>
+
+  <section>
     <h2>Notifications</h2>
     <div class="check">
       <input type="checkbox" id="notifications">
@@ -173,6 +206,7 @@ footer { color: var(--muted); font-size: 12.5px; text-align: center; }
 </main>
 <script src="/core/api.js"></script>
 <script src="/core/state.js"></script>
+<script src="/core/folders.js"></script>
 <script src="index.js"></script>
 </body>
 </html>

@@ -88,11 +88,27 @@ const button = {
     await button.icon('load');
   },
 
-  async render({count, username, prefs, flash}) {
+  /* Tooltip body. With no watched folders this stays exactly "N unread"; once the
+     badge is summing more than the inbox, the number needs explaining, because
+     otherwise it disagrees with the preview window -- which is inbox-only by
+     design -- and looks like a bug. Folders sitting at zero are left out rather
+     than padding the tooltip with lines that say nothing. */
+  summary(count, inboxCount, breakdown) {
+    const watched = (breakdown || []).filter(b => b.unread > 0);
+    if (!watched.length) {
+      return count + ' unread';
+    }
+    const inbox = typeof inboxCount === 'number' ? inboxCount : count;
+    return [count + ' unread', '  ' + inbox + ' in Inbox']
+      .concat(watched.map(b => '  ' + b.unread + ' in ' + b.name)).join('\n');
+  },
+
+  async render({count, inboxCount, breakdown, username, prefs, flash}) {
     if (count > 0) {
       await button.icon(flash ? 'new' : 'red');
       await button.badge(prefs.badge ? button.format(count) : '', prefs.badgeColor);
-      await button.label(button.APP + '\n' + username + '\n' + count + ' unread');
+      await button.label(button.APP + '\n' + username + '\n' +
+                         button.summary(count, inboxCount, breakdown));
     }
     else {
       await button.icon('gray');

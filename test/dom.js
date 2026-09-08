@@ -174,7 +174,7 @@ async function optionsPage(sendMessage) {
   const stub = chromeStub();
   stub.runtime.sendMessage = sendMessage;
   const w = page('data/options/index.html',
-                 ['core/api.js', 'core/state.js', 'data/options/index.js'], stub);
+                 ['core/api.js', 'core/state.js', 'core/folders.js', 'data/options/index.js'], stub);
   await new Promise(r => setTimeout(r, 0));   // let load() settle
   return w;
 }
@@ -215,6 +215,109 @@ console.log('\n7. options: the Save button always comes back');
      w.document.getElementById('conn-status').textContent);
   ok('thrown sendMessage: nothing was stored',
      (await w.chrome.storage.local.get('token')).token === undefined);
+}
+
+console.log('\n8. options: the folder picker');
+
+/* What the worker's `folders` handler returns: every mailbox, each with its full
+   path, plus the inbox id. */
+const FOLDERS = [
+  {id: 'MB-inbox', name: 'Inbox', path: 'Inbox', role: 'inbox'},
+  {id: 'MB-receipts', name: 'Receipts', path: 'Receipts', role: null},
+  {id: 'MB-important', name: 'Important', path: 'Important', role: null},
+  {id: 'MB-family', name: 'Family', path: 'Receipts/Family', role: null}
+];
+
+async function foldersPage(seed, reply) {
+  const stub = chromeStub();
+  Object.assign(stub.storage.local._data, seed || {});
+  stub.runtime.sendMessage = async req =>
+    req.method === 'folders' ? reply() : {ok: true, username: 'me@fastmail.com'};
+  const w = page('data/options/index.html',
+                 ['core/api.js', 'core/state.js', 'core/folders.js', 'data/options/index.js'], stub);
+  await new Promise(r => setTimeout(r, 10));
+  return w;
+}
+
+const boxes = w => Array.from(w.document.querySelectorAll('#folder-list input[type=checkbox]'));
+const rowText = w => Array.from(w.document.querySelectorAll('#folder-list label'))
+  .map(el => el.querySelector('span').textContent);
+
+async function change(w, el) {
+  el.dispatchEvent(new w.Event('change'));
+  await new Promise(r => setTimeout(r, 5));
+}
+
+{
+  const w = await foldersPage({watchFolders: ['Receipts/Family']},
+                              () => ({ok: true, folders: FOLDERS, inbox: 'MB-inbox'}));
+
+  ok('the picker is shown', w.document.getElementById('folder-list').hidden === false);
+  ok('and the text fallback is not', w.document.getElementById('folder-fallback').hidden === true);
+  eq('the inbox leads, then folders by path',
+     rowText(w), ['Inbox', 'Important', 'Receipts', 'Receipts/Family']);
+
+  const inbox = boxes(w)[0];
+  ok('the inbox row is ticked and disabled', inbox.checked && inbox.disabled);
+
+  const ticked = boxes(w).filter(b => b.checked && !b.disabled).map(b => b.dataset.path);
+  eq('the saved folder is ticked', ticked, ['Receipts/Family']);
+
+  // Ticking another must save both, and must never save the inbox.
+  const important = boxes(w).find(b => b.dataset.path === 'Important');
+  important.checked = true;
+  await change(w, important);
+  eq('ticking a folder saves it alongside the existing one',
+     (await w.chrome.storage.local.get('watchFolders')).watchFolders,
+     ['Important', 'Receipts/Family']);
+
+  const family = boxes(w).find(b => b.dataset.path === 'Receipts/Family');
+  family.checked = false;
+  await change(w, family);
+  eq('unticking removes it',
+     (await w.chrome.storage.local.get('watchFolders')).watchFolders, ['Important']);
+}
+
+{
+  /* A folder renamed or deleted in Fastmail. Dropping it silently would lose a
+     setting the user made with no way to tell that it had gone. */
+  const w = await foldersPage({watchFolders: ['Gone', 'Important']},
+                              () => ({ok: true, folders: FOLDERS, inbox: 'MB-inbox'}));
+
+  ok('an unmatched name is still listed', rowText(w).includes('Gone'), rowText(w).join(', '));
+  const gone = boxes(w).find(b => b.dataset.path === 'Gone');
+  ok('ticked, so it can be removed deliberately', gone && gone.checked);
+  ok('and flagged as not found',
+     /not found/.test(w.document.getElementById('folder-list').textContent));
+  ok('with the status saying so',
+     /no longer matches/.test(w.document.getElementById('folder-status').textContent),
+     w.document.getElementById('folder-status').textContent);
+
+  gone.checked = false;
+  await change(w, gone);
+  eq('unticking it leaves the rest alone',
+     (await w.chrome.storage.local.get('watchFolders')).watchFolders, ['Important']);
+}
+
+{
+  // No token yet, or Fastmail unreachable: fall back to typing names.
+  const w = await foldersPage({watchFolders: ['Important', 'Receipts/Family']},
+                              () => { throw new Error('No API token set'); });
+
+  ok('the picker is hidden', w.document.getElementById('folder-list').hidden === true);
+  ok('and the text field is shown', w.document.getElementById('folder-fallback').hidden === false);
+  eq('prefilled with what is saved',
+     w.document.getElementById('watchFolders').value, 'Important, Receipts/Family');
+  ok('and the reason is explained',
+     /No API token set/.test(w.document.getElementById('folder-status').textContent),
+     w.document.getElementById('folder-status').textContent);
+
+  const input = w.document.getElementById('watchFolders');
+  input.value = ' Archive , Receipts/Family ,, ';
+  await change(w, input);
+  eq('typed names are trimmed and blanks dropped',
+     (await w.chrome.storage.local.get('watchFolders')).watchFolders,
+     ['Archive', 'Receipts/Family']);
 }
 
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');

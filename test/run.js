@@ -490,6 +490,148 @@ console.log('\n20. a dead token must still lead to Options');
      'calls: ' + JSON.stringify(calls));
 }
 
+console.log('\n21. folder names resolve to mailbox ids');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  const ctx = load(server, []);
+  await ctx.__api.storage.local.set({token: 'good'});
+  await ctx.check.execute('test');
+  const all = ctx.__api.storage.session._data.mailboxes.all;
+
+  const path = name => (all.find(m => m.id === name) || {}).path;
+  eq('a nested mailbox carries its full path', path('MB-family'), 'Receipts/Family');
+  eq('a top-level one is just its name', path('MB-important'), 'Important');
+
+  const r = n => ctx.folders.resolve(all, n, 'MB-inbox');
+
+  eq('a full path matches', r(['Receipts/Family']).ids, ['MB-family']);
+  eq('an unambiguous leaf name matches', r(['Important']).ids, ['MB-important']);
+  eq('case and stray spaces do not matter',
+     r(['  receipts / family ']).ids, ['MB-family']);
+
+  /* Two folders are called "Notes". Picking one would put a silently wrong number
+     on the badge, so the bare name is reported unresolved and the path still works. */
+  eq('an ambiguous leaf name resolves to nothing', r(['Notes']).ids, []);
+  eq('and is reported so the options page can say why', r(['Notes']).missing, ['Notes']);
+  eq('the path disambiguates it', r(['Receipts/Notes']).ids, ['MB-rnotes']);
+
+  eq('an unknown name is reported, not silently dropped', r(['Nope']).missing, ['Nope']);
+  eq('the inbox is dropped rather than double-counted', r(['Inbox']).ids, []);
+  eq('and is not reported as missing either', r(['Inbox']).missing, []);
+  eq('a name repeated in another case counts once', r(['Important', 'important']).ids, ['MB-important']);
+  eq('empty input is fine', r([]).ids, []);
+  eq('so is a blank entry', r(['', '  ']).ids, []);
+
+  // A cyclic parentId would otherwise recurse until the stack gave out.
+  const cyclic = ctx.jmap.paths([{id: 'a', name: 'A', parentId: 'b'}, {id: 'b', name: 'B', parentId: 'a'}]);
+  ok('a parent cycle terminates instead of blowing the stack', cyclic.size === 2);
+}
+
+console.log('\n22. watched folders are added to the badge, not to the preview');
+{
+  const server = {
+    token: 'good', requests: [], sets: [],
+    unread: [email('E1', 'a@x.com', 'newest', 1), email('E2', 'b@x.com', 'mid', 2),
+             email('E3', 'c@x.com', 'old', 3)],
+    folderUnread: {'MB-important': 2, 'MB-family': 5}
+  };
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.__api.storage.local.set({
+    token: 'good', watchFolders: ['Important', 'Receipts/Family'], notifications: false
+  });
+  await ctx.check.execute('test');
+  const sess = ctx.__api.storage.session._data;
+
+  eq('the badge sums the inbox and every watched folder', sess.count, 10);
+  eq('the inbox count is kept separately', sess['inbox-count'], 3);
+  eq('the breakdown is labelled by path',
+     sess.breakdown, [{name: 'Important', unread: 2}, {name: 'Receipts/Family', unread: 5}]);
+
+  // The point of riding along in the Mailbox/get that already runs.
+  eq('watched folders ride the existing Mailbox/get',
+     server.lastBoxIds, ['MB-inbox', 'MB-important', 'MB-family']);
+  /* The mailbox list is fetched once and cached, so a steady-state poll is still
+     a single round trip no matter how many folders are watched. */
+  const before = server.requests.length;
+  await ctx.check.execute('again');
+  eq('a steady-state poll is still one request', server.requests.length - before, 1);
+
+  eq('the message list stays inbox-only', sess.messages.map(m => m.id), ['E1', 'E2', 'E3']);
+  eq('and so does the query', server.lastFilter, {inMailbox: INBOX, notKeyword: '$seen'});
+
+  const title = calls.filter(c => c[0] === 'title').pop()[1];
+  ok('the tooltip explains the total', /\n10 unread\n/.test(title), title);
+  ok('naming the inbox share', /3 in Inbox/.test(title), title);
+  ok('and each watched folder', /2 in Important/.test(title) && /5 in Receipts\/Family/.test(title), title);
+}
+
+console.log('\n23. folder counting degrades safely');
+{
+  const server = {
+    token: 'good', requests: [], sets: [],
+    unread: [email('E1', 'a@x.com', 'hi', 1)],
+    folderUnread: {}    // Trash resolves to an id, but the server returns no row for it
+  };
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.__api.storage.local.set({token: 'good', watchFolders: ['Trash', 'Ghost']});
+  await ctx.check.execute('test');
+  const sess = ctx.__api.storage.session._data;
+
+  eq('a folder the server did not return contributes nothing', sess.count, 1);
+  eq('rather than a phantom zero in the tooltip', sess.breakdown, []);
+  ok('an unresolvable name is not sent to the server',
+     !(server.lastBoxIds || []).includes('Ghost'));
+
+  const title = calls.filter(c => c[0] === 'title').pop()[1];
+  ok('with nothing watched, the tooltip is unchanged', /\n1 unread$/.test(title), title);
+}
+
+console.log('\n24. unread only in a watched folder leaves the popup detached');
+{
+  const server = {
+    token: 'good', requests: [], sets: [], unread: [],
+    folderUnread: {'MB-important': 4}
+  };
+  const calls = [];
+  const ctx = load(server, calls, {worker: true});
+  await ctx.__api.storage.local.set({token: 'good', watchFolders: ['Important']});
+  await ctx.check.execute('test');
+  await settle(ctx);
+
+  eq('the badge still counts it', ctx.__api.storage.session._data.count, 4);
+  /* The preview window is inbox-only, so a non-zero badge no longer implies it has
+     anything to show. Attaching it here would open an empty window. */
+  eq('but the popup stays detached, so a click opens webmail',
+     calls.filter(c => c[0] === 'popup').pop(), ['popup', '']);
+}
+
+console.log('\n25. the options page can ask for the folder list');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  const ctx = load(server, [], {worker: true});
+  await ctx.__api.storage.local.set({token: 'good'});
+  await settle(ctx);
+
+  const reply = await new Promise(res =>
+    ctx.__api.runtime.onMessage._fire({method: 'folders'}, {}, res));
+
+  ok('the handler answers', reply && reply.ok, JSON.stringify(reply));
+  ok('with every mailbox, paths included',
+     reply.folders.some(f => f.path === 'Receipts/Family'),
+     JSON.stringify(reply.folders));
+  eq('and the inbox id, so the picker can mark it always-counted',
+     reply.inbox, INBOX);
+
+  // Ticking folders must take effect now, not at the next scheduled poll.
+  const before = server.requests.length;
+  await ctx.__api.storage.local.set({watchFolders: ['Important']});
+  await settle(ctx);
+  ok('a changed folder set triggers an immediate re-poll',
+     server.requests.length > before);
+}
+
 }
 
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');

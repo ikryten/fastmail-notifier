@@ -101,13 +101,17 @@ const jmap = {
 
   /* Mailbox ids are stable, so we resolve them once and cache for the session.
      Look them up by `role`, never by name: names are localised, and this account
-     has custom folders (Family, Important, Orders...) that must not be mistaken for Inbox. */
+     has custom folders (Family, Important, Orders...) that must not be mistaken for Inbox.
+
+     `parentId` comes back too so every mailbox can carry its full path. Fastmail
+     folders nest, and two subfolders under different parents may share a leaf name
+     -- the path is what makes a user's choice unambiguous. */
   async mailboxes(token, session) {
     const res = await jmap.call(token, session, [
       ['Mailbox/get', {
         accountId: session.accountId,
         ids: null,
-        properties: ['id', 'name', 'role', 'sortOrder']
+        properties: ['id', 'name', 'role', 'parentId', 'sortOrder']
       }, '0']
     ]);
     const list = jmap.byTag(res)['0'].list || [];
@@ -120,24 +124,53 @@ const jmap = {
     if (!byRole.inbox) {
       throw jmap.err('nobox', 'No mailbox with role "inbox" found on this account');
     }
+    const path = jmap.paths(list);
     return {
       inbox: byRole.inbox,
       trash: byRole.trash || null,
-      all: list.map(m => ({id: m.id, name: m.name, role: m.role || null}))
+      all: list.map(m => ({id: m.id, name: m.name, path: path.get(m.id), role: m.role || null}))
     };
+  },
+
+  /* "Receipts/Family" from the parentId chain. The depth cap is a cycle guard:
+     the data comes from the server, and a parent loop would otherwise recurse
+     until the stack gave out. */
+  paths(list) {
+    const by = new Map(list.map(m => [m.id, m]));
+    const out = new Map();
+    const walk = (m, depth) => {
+      if (out.has(m.id)) {
+        return out.get(m.id);
+      }
+      const parent = m.parentId ? by.get(m.parentId) : null;
+      const p = parent && depth < 20 ? walk(parent, depth + 1) + '/' + m.name : m.name;
+      out.set(m.id, p);
+      return p;
+    };
+    for (const m of list) {
+      walk(m, 0);
+    }
+    return out;
   },
 
   /* The whole poll in one HTTP round trip.
 
      Note the back-reference is on `#ids`, a whole argument. It cannot be used for a
      key nested inside `filter`, which is why the inbox id has to be resolved first
-     and cached rather than chained from a Mailbox/query in the same request. */
-  async poll(token, session, mailboxes) {
+     and cached rather than chained from a Mailbox/query in the same request.
+
+     `extraIds` are folders the user asked to have counted on the badge. They ride
+     along in the Mailbox/get that already runs, so watching folders costs no extra
+     request -- only a longer `ids` array. Their messages are deliberately not
+     fetched: the preview window and notifications stay inbox-only, which is what
+     Email/query above is for. */
+  async poll(token, session, mailboxes, extraIds) {
     const accountId = session.accountId;
+    const extra = (extraIds || []).filter(id => id && id !== mailboxes.inbox);
     const res = await jmap.call(token, session, [
       ['Mailbox/get', {
         accountId,
-        ids: [mailboxes.inbox],
+        ids: [mailboxes.inbox].concat(extra),
         properties: ['unreadEmails', 'totalEmails']
       }, 'box'],
       ['Email/query', {
@@ -156,14 +189,30 @@ const jmap = {
     ]);
 
     const tagged = jmap.byTag(res);
-    const box = (tagged.box.list || [])[0] || {};
+    const boxes = new Map((tagged.box.list || []).map(b => [b.id, b]));
     const order = tagged.q.ids || [];
     // Email/get gives no ordering guarantee, so re-impose the query's order.
     const found = new Map((tagged.get.list || []).map(e => [e.id, e]));
 
+    const box = boxes.get(mailboxes.inbox) || (tagged.box.list || [])[0] || {};
+    // The mailbox count is authoritative even past our LIMIT.
+    const inbox = typeof box.unreadEmails === 'number' ? box.unreadEmails : order.length;
+
+    /* A requested id that came back with no entry is a folder that has been
+       deleted or renamed since the list was cached. Omit it rather than counting
+       it as zero, so the caller can tell the two apart. */
+    const watched = [];
+    for (const id of extra) {
+      const b = boxes.get(id);
+      if (b && typeof b.unreadEmails === 'number') {
+        watched.push({id, unread: b.unreadEmails});
+      }
+    }
+
     return {
-      // The mailbox count is authoritative even past our LIMIT.
-      count: typeof box.unreadEmails === 'number' ? box.unreadEmails : order.length,
+      inbox,
+      watched,
+      count: watched.reduce((n, w) => n + w.unread, inbox),
       messages: order.map(id => found.get(id)).filter(Boolean).map(jmap.summarise)
     };
   },

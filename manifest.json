@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fastmail Notifier",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Unread-mail badge and preview window for Fastmail. Not affiliated with or endorsed by Fastmail.",
   "permissions": [
     "storage",

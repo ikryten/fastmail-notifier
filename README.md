@@ -438,3 +438,7 @@ held in an MV3 offscreen document — racy to create, requiring a busy flag and 
 self-terminating on idle — and Firefox has no `offscreen` API at all, so it would need a
 hidden-iframe shim as well. Alarms would still be required as a fallback. Not worth it
 for a minute of latency. Don't "finish" this.
+
+## License
+
+[Mozilla Public License 2.0](LICENSE).

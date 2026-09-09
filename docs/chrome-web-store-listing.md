@@ -69,6 +69,10 @@ preview without the extension ever contacting the message's sender.
 **remote code** — None. No code is fetched, evaluated or generated at runtime.
 Everything that executes is in the package, unminified and unbundled.
 
+## Privacy policy URL
+
+https://github.com/ikryten/fastmail-notifier/blob/master/docs/PRIVACY.md
+
 ## Data usage disclosure
 
 - **Authentication information** — the user's Fastmail API token. Stored in the

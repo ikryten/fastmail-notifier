@@ -291,6 +291,9 @@ as folders come and go, for a marginal gain. Don't "fix" this.
 
 ## Privacy: remote images
 
+The full privacy policy is in [docs/PRIVACY.md](docs/PRIVACY.md); this section is
+the engineering detail behind it.
+
 Previews load remote images by default, so mail looks the way the sender intended. That
 means opening one can fire a tracking pixel. **Options → Message preview → Load remote
 images** turns it off, after which a preview makes no request to the sender.

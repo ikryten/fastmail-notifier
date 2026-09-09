@@ -244,8 +244,12 @@ function makeFetch(server) {
           .filter(e => !(e.keywords || {})['$draft'])
           .filter(e => boxes.some(b => (e.mailboxIds || {})[b]))
           .sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
-        server.lastHits = hits;
-        const q = {ids: hits.map(e => e.id)};
+        /* Honour `limit`, and report the true total alongside a short page --
+           which is what a real server does, and the only way a test can tell the
+           badge apart from the length of the list the popup can show. */
+        const page = typeof args.limit === 'number' ? hits.slice(0, args.limit) : hits;
+        server.lastHits = page;
+        const q = {ids: page.map(e => e.id)};
         // server.omitTotal models a server that ignores calculateTotal, so the
         // client's fallback to the per-mailbox sum is exercised.
         if (!server.omitTotal) {

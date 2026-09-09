@@ -1115,6 +1115,68 @@ console.log('\n40. an unsent draft is not unread mail');
   eq('so the badge and the list agree', sess.count, sess.messages.length);
 }
 
+console.log('\n41. the badge counts past the page it can show');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  for (let i = 0; i < 60; i++) {
+    server.unread.push(email('P' + i, 'sender@x.com', 'message ' + i, i + 1));
+  }
+  const ctx = load(server, []);
+  await ctx.__api.storage.local.set({token: 'good', notifications: false});
+  await ctx.check.execute('test');
+  const sess = ctx.__api.storage.session._data;
+
+  const query = server.lastCall.methodCalls.find(c => c[0] === 'Email/query');
+  eq('the query asks for one page', query[1].limit, ctx.jmap.LIMIT);
+  eq('so the preview holds a page', sess.messages.length, 50);
+  eq('newest first', sess.messages[0].id, 'P0');
+
+  /* The badge is not the length of the list. It comes from Email/query's own
+     total, which counts the whole filtered union regardless of the page size --
+     so a full inbox reads correctly even though only 50 can be flipped through. */
+  eq('but the badge reports every unread message', sess.count, 60);
+  ok('the badge exceeds what the popup can show', sess.count > sess.messages.length);
+}
+
+console.log('\n42. a message rotating into the page is not new mail');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  for (let i = 0; i < 60; i++) {
+    server.unread.push(email('P' + i, 'sender@x.com', 'message ' + i, 30 + i));
+  }
+  const calls = [];
+  const ctx = load(server, calls);
+  await ctx.__api.storage.local.set({token: 'good'});
+  await ctx.check.execute('first');
+
+  const seen = ctx.__api.storage.local._data['seen-ids'];
+  eq('only the page is remembered', seen.length, 50);
+  ok('so P50 has never been seen', !seen.includes('P50'));
+
+  // Read the newest one; P50 rotates into the page for the very first time.
+  server.unread = server.unread.filter(e => e.id !== 'P0');
+  calls.length = 0;
+  await ctx.check.execute('after-read');
+
+  ok('it now appears in the preview',
+     ctx.__api.storage.session._data.messages.some(m => m.id === 'P50'));
+  /* Absent from seen-ids, and never announced -- but 80 minutes old. This is the
+     case the freshness floor exists for: "not in seen-ids" cannot mean "newly
+     delivered" once the unread count exceeds one page, because reading anything
+     rotates an older message into view. */
+  ok('but is not announced as new mail',
+     !calls.some(c => c[0] === 'notify'),
+     JSON.stringify(calls.filter(c => c[0] === 'notify')));
+
+  // Control, so the assertion above cannot pass by suppressing everything.
+  server.unread.unshift(email('NEW', 'new@x.com', 'just arrived', 0));
+  calls.length = 0;
+  await ctx.check.execute('new-mail');
+  ok('while genuinely new mail in the same crowded inbox still is',
+     calls.some(c => c[0] === 'notify' && /just arrived/.test(String(c[3]))),
+     JSON.stringify(calls.filter(c => c[0] === 'notify')));
+}
+
 }
 
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');

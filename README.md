@@ -250,8 +250,14 @@ offers like any other mailbox.
 
 The one caveat left: the preview is one page of 50 messages shared across every watched
 folder, so a chatty folder can push quieter mail off the end. That costs visibility in the
-popup, not correctness — the counts are authoritative past the page, and the freshness
-floor means rotated-out mail is never announced as new.
+popup, not correctness — the badge is not the length of that page, and the freshness floor
+means rotated-in mail is never announced as new.
+
+That second point is subtler than it looks and is the reason the floor exists at all. Once
+the unread count exceeds one page, reading any message pulls the next one into view **for
+the first time** — absent from `seen-ids`, because we have genuinely never seen it. Judging
+by delivery time as well as by `seen-ids` is the only thing that stops a months-old message
+being announced as a new arrival every time you read something.
 
 ### Deliberately not done
 

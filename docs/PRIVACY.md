@@ -49,7 +49,8 @@ effect immediately.
 - `*.fastmailusercontent.com` — to fetch images attached to a message you open
 
 Each request carries your API token so Fastmail knows it is you. Nothing else is
-attached, and no request goes anywhere else.
+attached, and no request carrying it goes anywhere else. Two things reach a
+different host, and both are described below.
 
 **Remote images — the one exception.** Email often references images hosted on the
 sender's own servers. When *Load remote images* is on, which is the default,
@@ -65,10 +66,20 @@ message still display, because those come from Fastmail rather than the sender.
 **Links you click** in a message open in a new tab, as they would from any mail
 client. That request goes wherever the link points, at your instruction.
 
+**Update checks, made by Firefox rather than by this extension.** The Firefox
+build is distributed outside addons.mozilla.org, so Mozilla does not deliver its
+updates. Instead Firefox periodically reads a small file from
+`raw.githubusercontent.com` listing the current version, and downloads the new
+package from `github.com` when there is one. Those requests come from the browser
+itself, on its own schedule. They carry no token and nothing about your mail, and
+tell GitHub only what fetching any public URL tells it: your IP address and
+roughly when you checked. The Chrome package omits this mechanism entirely.
+
 ## What this extension does not do
 
 - No analytics, telemetry, crash reporting, or usage statistics
-- No servers operated by the author — there is nowhere for data to go
+- No servers operated by the author — there is nowhere for data to go. The update
+  check above reads a static file from GitHub and sends nothing
 - Your data is never sold, rented, or transferred to anyone
 - No advertising, no profiling, no tracking across sites
 - No remote code: nothing is downloaded, evaluated, or generated at runtime.

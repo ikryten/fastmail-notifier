@@ -13,12 +13,23 @@ Trash, Open and Inbox buttons along the bottom](docs/popup.png)
 
 ## Install
 
-**Firefox.** Download the signed `.xpi` from
-[Releases](https://github.com/ikryten/fastmail-notifier/releases) and open it in Firefox.
+**Firefox.** Paste the `.xpi` link from
+[Releases](https://github.com/ikryten/fastmail-notifier/releases) into the address bar on
+any machine and Firefox installs it there and then — GitHub serves the asset as
+`application/x-xpinstall`, so there is no download step and no file to copy around.
 Mozilla countersigns it for self-distribution, so it installs permanently and survives
-restarts. Requires **Firefox 142+** (`strict_min_version`), which is the floor for
-`data_collection_permissions` — the extension declares `"required": ["none"]`: it sends
-nothing to any third party, and its only network peer is your own Fastmail account.
+restarts.
+
+From 1.0.1 onward it keeps itself current. AMO delivers updates only for the add-ons it
+hosts, so a self-distributed one has to say where to look: the manifest's `update_url`
+points at [`updates.json`](updates.json) in this repository, and Firefox reads it on its
+own schedule. Nothing is sent in that request, and `test/release.js` fails the build if
+that file and the manifest ever disagree about the current version.
+
+Requires **Firefox 142+** (`strict_min_version`), the floor for
+`data_collection_permissions` — the extension declares `"required": ["none"]`. It sends
+nothing to any third party, and the only host it talks to itself is your own Fastmail
+account.
 
 **Chrome.** Not on the Chrome Web Store, so for now the only route is the unpacked
 developer install described under [Running from source](#running-from-source).

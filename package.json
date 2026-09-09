@@ -1,11 +1,11 @@
 {
   "name": "fastmail-notifier",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Unread-mail notifier for Fastmail. Chrome + Firefox, MV3.",
   "license": "MPL-2.0",
   "scripts": {
-    "test": "node test/run.js && node test/dom.js"
+    "test": "node test/run.js && node test/dom.js && node test/release.js"
   },
   "devDependencies": {
     "jsdom": "^27.0.0"

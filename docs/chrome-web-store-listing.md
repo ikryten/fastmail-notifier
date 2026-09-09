@@ -100,6 +100,9 @@ only what Chrome actually uses:
 - `contextMenus` permission — the menu is built on Gecko only, because Chrome
   already provides Options on the action button
 - `background.scripts` — Firefox MV3 uses event pages; Chrome warns about this key
-- `browser_specific_settings` — the Gecko id and minimum version
+- `browser_specific_settings` — the Gecko id, minimum version, data collection
+  declaration, and the `update_url` the Firefox build uses to update itself
+  outside addons.mozilla.org. The Chrome package therefore contains no update
+  mechanism of its own; the Web Store handles that
 
 No other transformation: no bundling, no minification, no generated code.

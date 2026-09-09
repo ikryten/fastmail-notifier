@@ -1,0 +1,28 @@
+{
+  "addons": {
+    "fastmail-notifier@ikryten.com": {
+      "updates": [
+        {
+          "version": "1.0.0",
+          "update_link": "https://github.com/ikryten/fastmail-notifier/releases/download/v1.0.0/fastmail_notifier-1.0.0.xpi",
+          "update_hash": "sha256:2332d5a5a7bd472a0626be749b7bbac15ced1c06f7789dc6b70a6fc7a6eb6159",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "142.0"
+            }
+          }
+        },
+        {
+          "version": "1.0.1",
+          "update_link": "https://github.com/ikryten/fastmail-notifier/releases/download/v1.0.1/fastmail_notifier-1.0.1.xpi",
+          "update_hash": "sha256:3d18e55f3e17499c6182d4fd1200d1fc3868b6872c303929c83e7dfe923952be",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "142.0"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

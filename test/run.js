@@ -545,7 +545,7 @@ console.log('\n22. watched folders feed the badge, the preview and notifications
   const server = {
     token: 'good', requests: [], sets: [],
     unread: [email('E1', 'a@x.com', 'newest', 1),
-             email('X1', 'shop@x.com', 'important charge', 2, ['MB-important']),
+             email('X1', 'shop@x.com', 'flagged item', 2, ['MB-important']),
              email('E2', 'b@x.com', 'mid', 3),
              email('Z1', 'orders@x.com', 'dispatched', 4, ['MB-family']),
              email('E3', 'c@x.com', 'old', 5)],
@@ -614,8 +614,8 @@ console.log('\n24. mail in a watched folder reaches the preview window');
 {
   const server = {
     token: 'good', requests: [], sets: [],
-    unread: [email('A1', 'important@x.com', 'statement', 1, ['MB-important']),
-             email('A2', 'important@x.com', 'payment due', 2, ['MB-important'])],
+    unread: [email('A1', 'alerts@x.com', 'statement', 1, ['MB-important']),
+             email('A2', 'alerts@x.com', 'payment due', 2, ['MB-important'])],
     folderUnread: {'MB-important': 2}
   };
   const calls = [];
@@ -998,7 +998,7 @@ console.log('\n38. a preference change mid-poll cancels that poll\'s effects');
   const server = {
     token: 'good', requests: [], sets: [],
     unread: [email('E1', 'a@x.com', 'inbox mail', 0),
-             email('X1', 'b@x.com', 'important mail', 0, ['MB-important'])],
+             email('X1', 'b@x.com', 'folder mail', 0, ['MB-important'])],
     folderUnread: {'MB-important': 1}
   };
   const calls = [];

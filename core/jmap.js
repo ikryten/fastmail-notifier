@@ -101,7 +101,8 @@ const jmap = {
 
   /* Mailbox ids are stable, so we resolve them once and cache for the session.
      Look them up by `role`, never by name: names are localised, and this account
-     has custom folders (Family, Important, Orders...) that must not be mistaken for Inbox.
+     has custom folders (Important, Receipts, Family...) that must not
+     be mistaken for Inbox.
 
      `parentId` comes back too so every mailbox can carry its full path. Fastmail
      folders nest, and two subfolders under different parents may share a leaf name

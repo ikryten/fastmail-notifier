@@ -36,7 +36,7 @@ const repeater = {
 
      Deliberately not "schedule an alarm a few hundred ms out": Chrome clamps
      alarms to a 30 second floor in packaged extensions, and `when` values nearer
-     than that are honoured silently late. Unpacked extensions are exempt, so that
+     than that are honored silently late. Unpacked extensions are exempt, so that
      delay is invisible during development and would only appear once packaged --
      turning "the badge updates as soon as you mark something read" into a
      half-minute wait. Immediate work therefore runs in-process, and alarms carry

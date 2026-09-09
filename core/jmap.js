@@ -104,7 +104,7 @@ const jmap = {
   },
 
   /* Mailbox ids are stable, so we resolve them once and cache for the session.
-     Look them up by `role`, never by name: names are localised, and this account
+     Look them up by `role`, never by name: names are localized, and this account
      has custom folders (Important, Receipts, Family...) that must not
      be mistaken for Inbox.
 
@@ -260,7 +260,7 @@ const jmap = {
     return {
       perBox,
       count: total,
-      messages: order.map(id => found.get(id)).filter(Boolean).map(jmap.summarise)
+      messages: order.map(id => found.get(id)).filter(Boolean).map(jmap.summarize)
     };
   },
 
@@ -270,7 +270,7 @@ const jmap = {
 
      Verified against the live app: /mail/Inbox/<emailId> opens the message, and
      Fastmail canonicalises the URL to <threadId>.<emailId> on its own -- so the
-     email id alone is enough. An id it does not recognise degrades to the folder
+     email id alone is enough. An id it does not recognize degrades to the folder
      view rather than erroring, which makes this safe to attempt unconditionally.
 
      Re-verified once the preview began spanning folders: the /Inbox/ segment is
@@ -290,7 +290,7 @@ const jmap = {
     return m ? url + '?u=' + m[1] : url;
   },
 
-  summarise(e) {
+  summarize(e) {
     const from = (e.from && e.from[0]) || {};
     return {
       id: e.id,

@@ -53,7 +53,7 @@ const button = {
     }
     catch (e) {
       console.warn('[button] badge failed', e);
-      // An unusable colour should not also cost us the count.
+      // An unusable color should not also cost us the count.
       try {
         await api.action.setBadgeText({text: String(text || '')});
       }

@@ -12,7 +12,7 @@
    sources (//cdn.example.com/logo.png, still common in email) turn into
    chrome-extension://cdn.example.com/... and die with a broken-image icon.
 
-   Normalising here rather than setting a <base href> is deliberate: there is no
+   Normalizing here rather than setting a <base href> is deliberate: there is no
    single correct base for an email, so guessing one would silently point relative
    URLs at some arbitrary host. */
 

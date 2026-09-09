@@ -139,7 +139,7 @@ function fetchingAttr(el, name) {
    for it, and no legitimate email inline style needs one. */
 const CSS_FETCH = /url\s*\(|image-set\s*\(|@import|\\/i;
 
-/* The iframe is already unscriptable (no allow-scripts), so this is defence in
+/* The iframe is already unscriptable (no allow-scripts), so this is defense in
    depth rather than the only line: strip active content and javascript: URLs so
    nothing dangerous survives even if the sandbox attribute is ever loosened. */
 function sanitize(html, allowRemote) {
@@ -321,9 +321,9 @@ async function buildBody(id) {
   const prefs = await state.prefs();
   const allowRemote = prefs.loadRemoteImages !== false;
 
-  /* Each part is parsed and sanitised in isolation and only then concatenated.
+  /* Each part is parsed and sanitized in isolation and only then concatenated.
      Joining the raw values first would let one part's unclosed markup swallow the
-     next, which is both a rendering and a sanitisation hazard. */
+     next, which is both a rendering and a sanitization hazard. */
   const parts = bodyparts.select(email);
   let inner = '';
   let blocked = 0;
@@ -355,7 +355,7 @@ async function buildBody(id) {
             '). Enable it in options to load images.</p>' + inner;
   }
 
-  /* The real backstop for the no-remote-content promise. The sanitiser above is
+  /* The real backstop for the no-remote-content promise. The sanitizer above is
      an allowlist and should catch everything, but it is still an enumeration of
      attributes, and this enumeration has been found wrong twice. A policy on the
      document itself closes the whole class regardless of what was missed.

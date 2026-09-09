@@ -63,7 +63,7 @@ const check = {
      ticked, then the user's folders in the order they saved them.
 
      The inbox is held in its own pref rather than by name because JMAP identifies
-     it by `role` and mailbox names are localised -- see core/state.js. Here that
+     it by `role` and mailbox names are localized -- see core/state.js. Here that
      difference disappears: it becomes an ordinary row like any other. */
   /* The part of preferences that is baked into the query, so a change to it
      invalidates a poll already in flight. */

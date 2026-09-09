@@ -77,7 +77,7 @@ function buildChrome(calls) {
     },
     action: {
       // Tests add names here to make a specific setter reject, the way the
-      // browser rejects e.g. an unparseable badge colour.
+      // browser rejects e.g. an unparseable badge color.
       _fail: new Set(),
       async setIcon(o) {
         if (this._fail.has('icon')) throw new Error('bad icon');
@@ -248,7 +248,7 @@ function makeFetch(server) {
           .filter(e => !(e.keywords || {})['$draft'])
           .filter(e => boxes.some(b => (e.mailboxIds || {})[b]))
           .sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
-        /* Honour `limit`, and report the true total alongside a short page --
+        /* Honor `limit`, and report the true total alongside a short page --
            which is what a real server does, and the only way a test can tell the
            badge apart from the length of the list the popup can show. */
         const page = typeof args.limit === 'number' ? hits.slice(0, args.limit) : hits;
@@ -283,7 +283,7 @@ function makeFetch(server) {
    test that built it, not quietly behave like "everything". */
 function filterMailboxes(filter) {
   if (!filter || filter.operator !== 'AND' || !Array.isArray(filter.conditions)) {
-    throw new Error('unrecognised Email/query filter: ' + JSON.stringify(filter));
+    throw new Error('unrecognized Email/query filter: ' + JSON.stringify(filter));
   }
   /* Both exclusions are required: Mailbox.unreadEmails counts mail with neither
      $seen nor $draft, so a query that forgets $draft describes a different set
@@ -300,7 +300,7 @@ function filterMailboxes(filter) {
   if (or && or.conditions.length) {
     return or.conditions.map(c => c.inMailbox);
   }
-  throw new Error('unrecognised Email/query filter: ' + JSON.stringify(filter));
+  throw new Error('unrecognized Email/query filter: ' + JSON.stringify(filter));
 }
 
 function json(o) {

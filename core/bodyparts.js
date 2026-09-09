@@ -12,7 +12,7 @@
    or inline media across separate parts.
 
    Deliberately pure -- data in, data out, no DOM -- so the selection rules are
-   testable without a browser, and the caller keeps responsibility for sanitising
+   testable without a browser, and the caller keeps responsibility for sanitizing
    each part in isolation. */
 
 const bodyparts = {

@@ -116,7 +116,7 @@ console.log('\n1. popup: every body part is rendered, in order');
 console.log('\n2. popup: a part cannot leak markup into the next one');
 {
   // An unclosed tag in part one must not swallow part two: each part is parsed
-  // and sanitised on its own before the results are joined.
+  // and sanitized on its own before the results are joined.
   const doc = await renderBody(htmlEmail(
     [{partId: '1', type: 'text/html'}, {partId: '2', type: 'text/html'}],
     {1: {value: '<div><span>unterminated'}, 2: {value: '<p>still here</p>'}}));
@@ -146,10 +146,10 @@ console.log('\n4. popup: active content is stripped from HTML parts');
   ok('the text itself survives', /hi/.test(doc));
 }
 
-console.log('\n5. popup: remote content honours the preference');
+console.log('\n5. popup: remote content honors the preference');
 {
   /* Every construct the audit found still calling home with images off. The
-     sanitiser used to run only img[src] through an allowlist and leave the rest
+     sanitizer used to run only img[src] through an allowlist and leave the rest
      to a denylist that rejected javascript: but kept https:, so all of the
      media, SVG and image-set() cases below fired a request -- and none of them
      incremented the blocked counter, so the reader was told nothing was
@@ -344,7 +344,7 @@ async function change(w, el) {
      rowText(w), ['Inbox', 'Important', 'Receipts', 'Receipts/Family']);
 
   const inbox = boxes(w)[0];
-  /* It used to be disabled and labelled "always counted". It is now an ordinary
+  /* It used to be disabled and labeled "always counted". It is now an ordinary
      tick, because unticking it is the whole point of watching a VIP folder only. */
   ok('the inbox row is ticked but no longer disabled', inbox.checked && !inbox.disabled);
   ok('and is marked as the inbox rather than carrying a path', Boolean(inbox.dataset.inbox));
@@ -515,7 +515,7 @@ async function popupPage(messages, mailboxes, gen, stub) {
 {
   const w = await popupPage([msg('E1', ['MB-unknown'])], MBOX);
   const chip = w.document.getElementById('folder');
-  ok('an unrecognised mailbox shows no chip', chip.hidden === true);
+  ok('an unrecognized mailbox shows no chip', chip.hidden === true);
   ok('and never leaks a raw JMAP id into the page',
      !/MB-unknown/.test(w.document.body.textContent));
 }

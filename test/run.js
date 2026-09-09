@@ -198,7 +198,7 @@ console.log('\n10. deep links into the Fastmail web app');
      ctx.jmap.webUrl(session, 'a/b c'), BASE + 'a%2Fb%20c?u=1a2b3c4d');
 }
 
-console.log('\n11. image src normalisation');
+console.log('\n11. image src normalization');
 {
   const ctx = load({token: 'good', unread: [], requests: [], sets: []}, []);
   const f = ctx.urls.safeSrc;
@@ -244,7 +244,7 @@ console.log('\n13. review #1: a failing toolbar call must not stop polling');
   const ctx = load(server, calls, {worker: true});
   await ctx.__api.storage.local.set({token: 'good'});
   await settle(ctx);
-  // The browser rejects an unparseable badge colour; that used to propagate out
+  // The browser rejects an unparseable badge color; that used to propagate out
   // of check.run() and abort the alarm rearm.
   ctx.__api.action._fail.add('badgeColor');
   ctx.__api.alarms._alarms = {};
@@ -262,7 +262,7 @@ console.log('\n13. review #1: a failing toolbar call must not stop polling');
   ok('the next alarm was still scheduled',
      Boolean(await ctx.__api.alarms.get(ctx.repeater.NAME)),
      'alarms: ' + JSON.stringify(ctx.__api.alarms._alarms));
-  ok('the count still reached the badge despite the colour failing',
+  ok('the count still reached the badge despite the color failing',
      calls.some(c => c[0] === 'badge' && c[1] === '1'));
 }
 

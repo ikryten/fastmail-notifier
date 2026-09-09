@@ -118,7 +118,7 @@ effect.
 ## Two things that look like problems but aren't
 
 **Sub-30-second alarms do not exist in a packaged Chrome extension.** Chrome clamps
-`alarms` to a 30 second floor, and `when` values nearer than that are honoured silently
+`alarms` to a 30 second floor, and `when` values nearer than that are honored silently
 late — but *unpacked extensions are exempt*, so a short alarm looks instant in
 development and becomes a half-minute wait once packaged. Anything that must happen now
 (re-checking after marking read, a token change, waking from idle) therefore runs
@@ -338,6 +338,9 @@ authenticated request, not from the sender's server.
   replace a whole argument — not a key nested inside `filter`.
 - **Mailboxes are found by `role`, never by name.** Names are localized and users
   have custom folders.
+- **American spelling throughout,** in comments and test names as much as in the
+  interface. See [CLAUDE.md](CLAUDE.md) for the conventions a patch is expected
+  to follow.
 - **Never hardcode the API host.** The session object returns a region-specific
   `apiUrl` (e.g. `phl.api.fastmail.com`).
 - **Body parts are rendered in order, each sanitized in isolation.** RFC 8621 defines
@@ -411,7 +414,7 @@ knowing before you start:
   a shared mailbox rather than failing at write time; and `downloadUrl` already templates
   `{accountId}`, which `cid:` inline images already rely on.
 
-Either way the remaining work is the same shape: carry an `accountId` on each summarised
+Either way the remaining work is the same shape: carry an `accountId` on each summarized
 message through to the `body`/`markRead`/`trash` handlers, group the folder picker by
 account, add an account level above the folder level in the tooltip breakdown, and make
 notification ids `fmc:<accountId>:<emailId>` so a click opens the right mailbox.

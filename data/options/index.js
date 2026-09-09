@@ -68,7 +68,7 @@ async function paintConnection() {
    fallback for when it cannot -- no token yet, or Fastmail unreachable.
 
    Two keys, though: `watchInbox` is a boolean of its own because JMAP identifies
-   the inbox by role and mailbox names are localised, so "Inbox" is not a portable
+   the inbox by role and mailbox names are localized, so "Inbox" is not a portable
    way to name it in a list of names. The Inbox tick is therefore rendered in the
    picker but persisted separately, and it stays on screen even in the fallback
    branch -- otherwise a user whose token has died could not turn it back on. */
@@ -114,7 +114,7 @@ const folderBoxes = () =>
 
 /* Watching nothing at all is allowed -- it is a legitimate way to mute the
    extension without removing the token -- but it must never be silent, because a
-   grey icon and an empty badge look exactly like "you have no mail". */
+   gray icon and an empty badge look exactly like "you have no mail". */
 function watchingNothing() {
   const boxes = folderBoxes();
   if (!boxes.length) {
@@ -263,7 +263,7 @@ async function persist() {
   o.period = Math.max(30, Math.min(3600, Number(o.period) || 60));
   $('period').value = o.period;
 
-  // An unusable colour is rejected by the browser, and that rejection used to
+  // An unusable color is rejected by the browser, and that rejection used to
   // propagate out of the poll and stop it rescheduling. Never store one.
   if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(o.badgeColor).trim())) {
     o.badgeColor = state.DEFAULTS.badgeColor;

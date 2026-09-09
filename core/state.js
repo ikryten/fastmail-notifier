@@ -26,7 +26,7 @@ self.state = {
        than mailbox ids -- see core/folders.js for why.
 
        The inbox is held separately because it is identified by `role`, not by
-       name: JMAP names are localised, so "Inbox" is not a portable way to refer to
+       name: JMAP names are localized, so "Inbox" is not a portable way to refer to
        it. Keeping it out of the list also means an existing profile, which has no
        watchInbox key at all, falls through to the default and keeps watching the
        inbox exactly as before. */

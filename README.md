@@ -464,7 +464,7 @@ Working in both browsers from one codebase, with no build step and no dependenci
 | HTML bodies with images | verified | verified |
 | Mark read | verified | verified |
 | Desktop notifications | verified | verified |
-| Move to Trash, deep links | verified | untested (same code path as mark read) |
+| Move to Trash, deep links | verified | verified |
 | Watched folders: badge, preview, notifications | verified | verified |
 | Deep link to non-inbox mail | verified | verified |
 | Remote content fully blocked | verified | verified |

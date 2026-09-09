@@ -379,10 +379,28 @@ async function buildBody(id) {
 
 /* ---------- actions ---------- */
 
+/* Record the place for the next time the popup opens.
+
+   `head` -- the message at the top of the list right now -- rides along because
+   resuming is not always the right answer. If mail has arrived since we left, the
+   top of the list is where the reader wants to be, and reopening halfway down
+   would quietly bury the very thing this extension exists to announce. Comparing
+   the stored head against the current one detects that exactly, with no clock and
+   no guesswork about how long "recently" is.
+
+   Written on every move rather than on close: a popup gets no reliable unload,
+   and a storage write that loses the race with the window closing would lose
+   precisely the position the reader just navigated to. */
+function remember() {
+  const m = view.messages[view.index];
+  return state.setResumeAt(m ? {id: m.id, head: view.messages[0].id} : null);
+}
+
 function move(delta) {
   const next = view.index + delta;
   if (next >= 0 && next < view.messages.length) {
     view.index = next;
+    remember();
     paint();
   }
 }
@@ -395,6 +413,7 @@ function dropCurrent() {
   if (view.index >= view.messages.length) {
     view.index = Math.max(0, view.messages.length - 1);
   }
+  remember();
   paint();
 }
 
@@ -469,13 +488,29 @@ async function load() {
 
   const messages = await state.messages();
 
-  // Keep our position if the poll simply refreshed the same head of the list.
+  /* Two ways to land somewhere other than the top of the list, and they are not
+     the same thing. `current` means this call is a refresh of a popup already on
+     screen -- a poll landed while the reader was looking at something -- and that
+     message must stay put. Only a genuinely fresh open consults the saved place. */
   const current = view.messages[view.index];
+  const resume = current ? null : await state.resumeAt();
   view.messages = messages;
+
   if (current) {
     const at = messages.findIndex(m => m.id === current.id);
     view.index = at === -1 ? 0 : at;
   }
+  else if (resume && messages.length && messages[0].id === resume.head) {
+    // Same head, so nothing has arrived since: pick up where we left off. A
+    // message read or trashed elsewhere in the meantime is simply not found,
+    // which falls back to the top like any other reason to start over.
+    const at = messages.findIndex(m => m.id === resume.id);
+    view.index = at === -1 ? 0 : at;
+  }
+
+  // Keeps the saved place describing what is actually on screen, including when
+  // the two branches above declined to use it.
+  await remember();
 
   $('account').textContent = view.session ? view.session.username : '';
   $('account').title = $('account').textContent;

@@ -949,6 +949,7 @@ console.log('\n36. replacing the token clears the old account at once');
   const ctx = load(server, []);
   await ctx.state.setToken('A');
   await ctx.state.setResult({count: 5, messages: [{id: 'X1'}], breakdown: [{name: 'Inbox', unread: 5}]});
+  await ctx.state.setResumeAt({id: 'X1', head: 'X1'});
 
   await ctx.state.setToken('B');
   const sess = ctx.__api.storage.session._data;
@@ -958,6 +959,10 @@ console.log('\n36. replacing the token clears the old account at once');
   eq('the old messages are gone', sess.messages, []);
   eq('and the old count with them', sess.count, -1);
   eq('and the old breakdown', sess.breakdown, []);
+  /* The popup's saved reading position points at a message id from the old
+     account. Harmless if left -- no id would match -- but it is result state and
+     it goes with the rest of it. */
+  eq('and the saved place in the old list', sess.resume, null);
 
   const gens = new Set();
   for (let i = 0; i < 5; i++) {

@@ -33,6 +33,7 @@ anywhere else.
 | The current unread messages | Sender, subject, date, preview and folder, so the popup opens instantly |
 | The unread count and per-folder breakdown | The badge and its tooltip |
 | Notification-silencing deadline | If you have silenced notifications for a period |
+| Which message the preview window was showing | So reopening it returns you to where you were reading |
 
 The API token is stored unencrypted, like any browser extension setting. If your
 machine is ever compromised, revoke the token in Fastmail's settings — it takes

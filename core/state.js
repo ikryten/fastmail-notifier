@@ -137,8 +137,26 @@ self.state = {
 
   async clearResult() {
     return api.storage.session.set({
-      count: self.state.UNAUTHENTICATED, messages: [], breakdown: []
+      count: self.state.UNAUTHENTICATED, messages: [], breakdown: [], resume: null
     });
+  },
+
+  /* Where the reader had got to in the message list when the popup last closed.
+
+     The popup is a page, not a persistent view: the browser destroys it on every
+     close, so paging to the twelfth message and glancing away meant starting from
+     the first one again. This is the one piece of popup state worth outliving it.
+
+     Two message ids, never an index. The list is republished on every poll, so an
+     index would come back silently pointing at a different message -- and `head`,
+     the id that was at the top of the list when we left, is what decides whether
+     to resume at all. See the popup for why arriving mail cancels the resume. */
+  async resumeAt() {
+    const {resume} = await api.storage.session.get('resume');
+    return resume || null;
+  },
+  async setResumeAt(resume) {
+    return api.storage.session.set({resume: resume || null});
   },
 
   /* Ids we have already told the user about, so a restart does not

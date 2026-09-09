@@ -490,8 +490,8 @@ const msg = (id, boxIds) => ({
   receivedAt: new Date().toISOString(), preview: 'preview', hasAttachment: false
 });
 
-async function popupPage(messages, mailboxes, gen) {
-  const stub = chromeStub();
+async function popupPage(messages, mailboxes, gen, stub) {
+  stub = stub || chromeStub();
   Object.assign(stub.storage.session._data, {messages, mailboxes, session: {username: 'me@x.com'}});
   Object.assign(stub.storage.local._data, {'token-gen': typeof gen === 'number' ? gen : 3});
   stub.runtime.sendMessage = async () => ({ok: true, email: {htmlBody: [], bodyValues: {}}});
@@ -539,6 +539,94 @@ async function popupPage(messages, mailboxes, gen) {
   ok('and no longer says "Inbox zero", which assumes the inbox is watched',
      !/Inbox zero/.test(w.document.getElementById('overlay').textContent),
      w.document.getElementById('overlay').textContent);
+}
+
+console.log('\n11. popup: it reopens where the reader left off');
+
+/* The popup is destroyed on every close, so "where you left off" has to survive
+   in storage. These reopen a second page against the *same* storage stub, which
+   is exactly what the browser does when the toolbar button is clicked again. */
+const LIST = ['E1', 'E2', 'E3', 'E4', 'E5'].map(id => msg(id, ['MB-inbox']));
+const counter = w => w.document.getElementById('counter').textContent;
+
+async function pageForward(w, n) {
+  for (let i = 0; i < n; i++) {
+    w.document.getElementById('next').click();
+    await new Promise(r => setTimeout(r, 5));
+  }
+}
+
+{
+  const stub = chromeStub();
+  const first = await popupPage(LIST, MBOX, 3, stub);
+  await pageForward(first, 2);
+  eq('paged to the third message', counter(first), '3 of 5');
+
+  const second = await popupPage(LIST, MBOX, 3, stub);
+  eq('reopening lands on the third message, not the first', counter(second), '3 of 5');
+  eq('and shows that message, not merely the count',
+     second.document.getElementById('subject').textContent, 'Subject E3');
+}
+
+{
+  /* New mail cancels the resume. Reopening halfway down the list would bury the
+     message that just arrived, which is the one thing this extension exists to
+     show, so an unfamiliar head sends the reader back to the top. */
+  const stub = chromeStub();
+  const first = await popupPage(LIST, MBOX, 3, stub);
+  await pageForward(first, 2);
+
+  const arrived = [msg('E0', ['MB-inbox'])].concat(LIST);
+  const second = await popupPage(arrived, MBOX, 3, stub);
+  eq('mail arriving since sends the reader back to the top', counter(second), '1 of 6');
+  eq('which is the new message', second.document.getElementById('subject').textContent,
+     'Subject E0');
+}
+
+{
+  // Read or trashed elsewhere while the popup was closed: nothing to return to.
+  const stub = chromeStub();
+  const first = await popupPage(LIST, MBOX, 3, stub);
+  await pageForward(first, 2);
+
+  const second = await popupPage(LIST.filter(m => m.id !== 'E3'), MBOX, 3, stub);
+  eq('a vanished message falls back to the top', counter(second), '1 of 4');
+}
+
+{
+  /* A poll landing while the popup is open re-runs load(). The message on screen
+     wins there -- the saved place is for fresh opens only, and letting it apply
+     here would yank the reader somewhere else mid-read. */
+  const stub = chromeStub();
+  const w = await popupPage(LIST, MBOX, 3, stub);
+  await pageForward(w, 3);
+  eq('paged to the fourth message', counter(w), '4 of 5');
+
+  await stub.storage.session.set({messages: [msg('E0', ['MB-inbox'])].concat(LIST)});
+  await w.load();
+  await new Promise(r => setTimeout(r, 5));
+  eq('a poll arriving mid-read keeps the message on screen', counter(w), '5 of 6');
+  eq('and it is still the same message',
+     w.document.getElementById('subject').textContent, 'Subject E4');
+}
+
+{
+  // Acting on a message moves the place with it, so the next open is not stranded
+  // on an id that no longer exists.
+  const stub = chromeStub();
+  const w = await popupPage(LIST, MBOX, 3, stub);
+  await pageForward(w, 2);
+  w.document.getElementById('trash').click();
+  await new Promise(r => setTimeout(r, 5));
+  eq('trashing advances to the next message', counter(w), '3 of 4');
+  eq('and the saved place followed it',
+     (await stub.storage.session.get('resume')).resume.id, 'E4');
+}
+
+{
+  const stub = chromeStub();
+  await popupPage([], MBOX, 3, stub);
+  eq('an empty list saves no place', (await stub.storage.session.get('resume')).resume, null);
 }
 
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');

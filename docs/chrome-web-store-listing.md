@@ -18,7 +18,8 @@ See how much unread mail is waiting, and read it, without opening a tab.
 - **Unread count on your toolbar.** A badge shows how many messages are waiting,
   kept up to date in the background.
 - **Read without switching tabs.** Click the icon for a preview window and flip
-  through your unread mail — full HTML, images and all.
+  through your unread mail — full HTML, images and all. Close it and it reopens
+  where you left off.
 - **Act on a message there and then.** Mark it read, send it to Trash, or open it
   in Fastmail.
 - **Watch the folders you care about,** not just the Inbox. Have an *Important*

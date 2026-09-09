@@ -37,7 +37,7 @@ Either way, you need a Fastmail API token:
 
 ![The options page: connection with a masked token, check interval, badge colour,
 the folder picker with Inbox ticked, notification and VIP settings, the remote
-images toggle, and the new-tab behaviour switch](docs/options.png)
+images toggle, and the new-tab behavior switch](docs/options.png)
 
 </details>
 
@@ -285,7 +285,7 @@ being announced as a new arrival every time you read something.
 Ticking a folder can announce a message that arrived shortly *before* you ticked it: it is
 absent from `seen-ids` and newer than the freshness floor. This is not treated as a bug.
 You have just asked to hear about that folder and there is recent mail in it; announcing
-it is the useful behaviour, and a burst collapses into one digest anyway. The alternative
+it is the useful behavior, and a burst collapses into one digest anyway. The alternative
 — a per-mailbox "first snapshot" baseline — means persistent state that has to be pruned
 as folders come and go, for a marginal gain. Don't "fix" this.
 
@@ -321,7 +321,7 @@ sources — a src-less `<img>` still takes up layout as alt text or an empty box
 `<video>` keeps its controls. CSS is checked for `url()`, `image-set()`, `@import` and
 backslash escapes, since a CSS escape can spell `url(` without containing it. A one-line
 notice reports how many things were withheld, and everything blocked is now counted: the
-worst part of the old behaviour was that several of these were stripped silently, so the
+worst part of the old behavior was that several of these were stripped silently, so the
 reader was told nothing had been withheld while five pixels fired.
 
 No probing is involved: with the setting off there is nothing to detect, because the
@@ -436,7 +436,7 @@ verifiable without launching Firefox: reintroducing `contextMessage` makes the F
 pass fail while Chrome still succeeds. Covers the logged-out and bad-token paths, badge counts,
 query ordering, backlog suppression, the VIP filter, silencing, the JMAP write
 patches, folder-name resolution, multi-mailbox query shapes, the empty watch set, and
-transient-failure behaviour.
+transient-failure behavior.
 
 ## Status
 

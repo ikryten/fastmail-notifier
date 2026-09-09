@@ -449,6 +449,7 @@ Working in both browsers from one codebase, with no build step and no dependenci
 |---|---|---|
 | Unread badge | verified | verified |
 | Preview popup, prev/next | verified | verified |
+| Preview reopens where you left off | verified | verified |
 | HTML bodies with images | verified | verified |
 | Mark read | verified | verified |
 | Desktop notifications | verified | verified |

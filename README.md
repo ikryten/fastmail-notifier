@@ -429,7 +429,7 @@ Working in both browsers from one codebase, with no build step and no dependenci
 | Watched folders: badge, preview, notifications | verified | verified |
 | Deep link to non-inbox mail | verified | verified |
 | Remote content fully blocked | verified | verified |
-| Idle token revalidation | untested | untested |
+| Idle token revalidation | verified | verified |
 
 **Polling is the intended design, not a placeholder.** JMAP push via `eventSourceUrl`
 was considered and deliberately declined. It would cut badge latency to near zero, but a

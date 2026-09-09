@@ -40,7 +40,7 @@ Not affiliated with or endorsed by Fastmail.
 ## Permission justifications
 
 **storage** — Stores the user's Fastmail API token, their settings (poll
-interval, badge colour, which folders to watch, notification preferences), and
+interval, badge color, which folders to watch, notification preferences), and
 the most recent poll's results so the popup can open instantly. All of it stays
 in the browser profile; none is sent anywhere but Fastmail.
 

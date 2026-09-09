@@ -20,7 +20,7 @@ anywhere else.
 | Data | Why |
 |---|---|
 | Your Fastmail API token | To authenticate your own requests to Fastmail |
-| Your settings | Check interval, badge colour, which folders to watch, notification and VIP preferences, the remote-images toggle |
+| Your settings | Check interval, badge color, which folders to watch, notification and VIP preferences, the remote-images toggle |
 | Ids of messages already announced | So a restart does not re-notify you about mail you have already seen. Capped at 500 |
 | Time of the last check | To tell newly arrived mail from mail that was already there |
 

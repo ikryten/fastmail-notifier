@@ -35,7 +35,7 @@ Either way, you need a Fastmail API token:
 <details>
 <summary>What the options page looks like</summary>
 
-![The options page: connection with a masked token, check interval, badge colour,
+![The options page: connection with a masked token, check interval, badge color,
 the folder picker with Inbox ticked, notification and VIP settings, the remote
 images toggle, and the new-tab behavior switch](docs/options.png)
 
@@ -232,7 +232,7 @@ deliberately rather than vanishing. They count as watching nothing, so a user wh
 saved folder was deleted gets the warning above rather than a silent zero.
 
 The Inbox is the exception, held in its own `watchInbox` setting rather than by name. JMAP
-identifies it by `role`, and mailbox names are localised — on a French account the role is
+identifies it by `role`, and mailbox names are localized — on a French account the role is
 still `inbox` while the name is `Boîte de réception` — so a name is not a portable way to
 refer to it. Keeping it separate also means an existing profile, which has no `watchInbox`
 key at all, falls through to the default and keeps watching the Inbox exactly as before.
@@ -303,11 +303,11 @@ enumerate the attributes that fetch things and strip them — was found wrong tw
 
 **A Content-Security-Policy on the rendered document.** The generated `srcdoc` carries
 `default-src 'none'`, with `img-src`/`media-src`/`font-src` limited to `data:` when remote
-content is off. This closes the whole class at once, whatever the sanitiser missed, and
+content is off. This closes the whole class at once, whatever the sanitizer missed, and
 also rules out frames, plugins and form submission. A `srcdoc` frame otherwise inherits
 only the MV3 default policy, which constrains scripts and says nothing about images.
 
-**An allowlist in the sanitiser.** Every URL-bearing attribute — `src`, `poster`, `data`,
+**An allowlist in the sanitizer.** Every URL-bearing attribute — `src`, `poster`, `data`,
 `background`, `xlink:href`, SVG `href` and the rest — is routed through `urls.safeSrc`,
 which ends in `return null`: an attribute nobody anticipated is dropped, not kept. This
 replaced a denylist that ran only `img[src]` through the allowlist and checked everything
@@ -336,13 +336,13 @@ authenticated request, not from the sender's server.
   single JMAP request, chained with a `#ids` back-reference. Mailbox ids are
   resolved once and cached for the session, because a back-reference can only
   replace a whole argument — not a key nested inside `filter`.
-- **Mailboxes are found by `role`, never by name.** Names are localised and users
+- **Mailboxes are found by `role`, never by name.** Names are localized and users
   have custom folders.
 - **Never hardcode the API host.** The session object returns a region-specific
   `apiUrl` (e.g. `phl.api.fastmail.com`).
-- **Body parts are rendered in order, each sanitised in isolation.** RFC 8621 defines
+- **Body parts are rendered in order, each sanitized in isolation.** RFC 8621 defines
   `htmlBody`/`textBody` as ordered *lists* of parts to display in sequence, so taking only
-  the first silently drops content. `core/bodyparts.js` selects them; the popup sanitises
+  the first silently drops content. `core/bodyparts.js` selects them; the popup sanitizes
   each part separately, because joining raw values first would let one part's unclosed
   markup swallow the next.
 - **A poll's results are discarded if the token changed while it was in flight.**
@@ -366,7 +366,7 @@ authenticated request, not from the sender's server.
   the token or `chrome.*`. Links work via `<base target="_blank">` + `allow-popups`.
 - **Deep links need only the email id.** `/mail/Inbox/<emailId>` opens a message and
   Fastmail canonicalises the URL to `<threadId>.<emailId>` itself. An id it does not
-  recognise degrades to the folder view rather than erroring, so the link is always safe
+  recognize degrades to the folder view rather than erroring, so the link is always safe
   to attempt. The `?u=` account key is the JMAP `accountId` minus its leading `u`
   (`u1a2b3c4d` ↔ `?u=1a2b3c4d`), and is omitted when the accountId has some other shape.
 - **Inline `cid:` images become `data:` URLs.** They live behind an authenticated

@@ -4,6 +4,9 @@ An unread-mail notifier for Fastmail, in the spirit of
 [ignotifier](https://github.com/inbasic/ignotifier): a toolbar badge with the
 unread count, and a preview window you can flip through unread mail in.
 
+*Not affiliated with or endorsed by Fastmail. It is an independent extension that
+talks to Fastmail's public JMAP API with a token you create yourself.*
+
 ![The preview window: one unread message with its sender, subject, an Inbox folder
 chip and a "24 of 24" counter, above the rendered message body, with Mark read,
 Trash, Open and Inbox buttons along the bottom](docs/popup.png)

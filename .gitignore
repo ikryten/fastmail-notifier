@@ -1,3 +1,4 @@
 *.zip
 node_modules/
 CODE_REVIEW*.md
+web-ext-artifacts/

@@ -341,6 +341,11 @@ function load(server, calls, opts) {
   const files = ['core/api.js', 'core/state.js', 'core/urls.js', 'core/bodyparts.js',
                  'core/folders.js', 'core/jmap.js',
                  'core/button.js', 'core/check.js', 'core/repeater.js'];
+  /* Models the Chrome Web Store build, which drops the contextMenus permission
+     -- at which point the namespace does not exist at all. */
+  if (opts && opts.noContextMenus) {
+    delete apiObj.contextMenus;
+  }
   if (opts && opts.worker) {
     files.push('worker.js');
   }

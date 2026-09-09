@@ -1181,6 +1181,43 @@ console.log('\n42. a message rotating into the page is not new mail');
      JSON.stringify(calls.filter(c => c[0] === 'notify')));
 }
 
+console.log('\n43. the worker survives without the contextMenus permission');
+{
+  /* The Chrome Web Store package drops contextMenus, because Chrome puts Options
+     on the action button itself and buildMenu never runs there. An unguarded
+     addListener at the top of worker.js would then throw during startup and take
+     the entire extension down -- silently, since nothing else would get to run. */
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  const calls = [];
+  let threw = null;
+  let ctx;
+  try {
+    ctx = load(server, calls, {worker: true, noContextMenus: true});
+  }
+  catch (e) {
+    threw = e;
+  }
+
+  ok('the worker loads at all', !threw, threw && threw.message);
+  ok('and the namespace really was absent', ctx && !ctx.__api.contextMenus);
+
+  // Everything else must still work, not merely not-crash.
+  await ctx.__api.storage.local.set({token: 'good'});
+  await ctx.check.execute('test');
+  await settle(ctx);
+  ok('polling still runs', server.requests.length > 0);
+  ok('and the toolbar still renders', calls.some(c => c[0] === 'icon'));
+
+  // And the dead-token route to Options, which does not depend on the menu.
+  await ctx.__api.storage.local.set({token: 'revoked'});
+  await ctx.state.clearResult();
+  await settle(ctx);
+  calls.length = 0;
+  await ctx.__api.action.onClicked._fire();
+  ok('a dead-token click still reaches Options', calls.some(c => c[0] === 'options'),
+     JSON.stringify(calls));
+}
+
 }
 
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');

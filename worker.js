@@ -73,7 +73,7 @@ async function openWebmail(emailId) {
    the MV3 spelling and is supported by Firefox too ('browser_action' was the MV2
    name). */
 async function buildMenu() {
-  if (!IS_GECKO) {
+  if (!IS_GECKO || !api.contextMenus) {
     return;
   }
   try {
@@ -89,11 +89,18 @@ async function buildMenu() {
   }
 }
 
-api.contextMenus.onClicked.addListener(info => {
-  if (info.menuItemId === 'fmc-options') {
-    api.runtime.openOptionsPage();
-  }
-});
+/* Guarded on the API rather than on IS_GECKO: the Chrome Web Store build drops
+   the contextMenus permission, since Chrome puts Options on the action button
+   itself and buildMenu() never runs there. Without the permission the namespace
+   is undefined, and an unguarded addListener here would throw at worker startup
+   and take the whole extension down with it. */
+if (api.contextMenus) {
+  api.contextMenus.onClicked.addListener(info => {
+    if (info.menuItemId === 'fmc-options') {
+      api.runtime.openOptionsPage();
+    }
+  });
+}
 
 /* Only fires when the popup is detached, i.e. nothing unread or not connected. */
 api.action.onClicked.addListener(async () => {

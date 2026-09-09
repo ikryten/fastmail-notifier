@@ -11,15 +11,25 @@ talks to Fastmail's public JMAP API with a token you create yourself.*
 chip and a "24 of 24" counter, above the rendered message body, with Mark read,
 Trash, Open and Inbox buttons along the bottom](docs/popup.png)
 
-## Setup
+## Install
+
+**Firefox.** Download the signed `.xpi` from
+[Releases](https://github.com/ikryten/fastmail-notifier/releases) and open it in Firefox.
+Mozilla countersigns it for self-distribution, so it installs permanently and survives
+restarts. Requires **Firefox 142+** (`strict_min_version`), which is the floor for
+`data_collection_permissions` — the extension declares `"required": ["none"]`: it sends
+nothing to any third party, and its only network peer is your own Fastmail account.
+
+**Chrome.** Not on the Chrome Web Store, so for now the only route is the unpacked
+developer install described under [Running from source](#running-from-source).
+
+Either way, you need a Fastmail API token:
 
 1. **Create a token.** In Fastmail: Settings → Privacy & Security →
    [API tokens](https://app.fastmail.com/settings/security/tokens) → *New API
    token*, with the **Mail** scope. Read-only is enough for the badge; marking
    read and moving to Trash need read-write.
-2. **Load the extension.** `chrome://extensions` → enable *Developer mode* →
-   *Load unpacked* → select this directory.
-3. **Paste the token** into the extension's options page and hit *Verify & save*.
+2. **Paste the token** into the extension's options page and hit *Verify & save*.
    It is checked against Fastmail before it is stored.
 
 <details>
@@ -31,24 +41,33 @@ images toggle, and the new-tab behaviour switch](docs/options.png)
 
 </details>
 
-## Firefox
+## Running from source
 
-One codebase, one manifest, no build step. Load it with:
+**For development, and currently the only way to run it in Chrome.** Both browsers load
+this directory as it stands — there is no build step and nothing to compile.
 
-`about:debugging` → **This Firefox** → **Load Temporary Add-on…** → pick `manifest.json`.
+**Chrome:** `chrome://extensions` → enable *Developer mode* → *Load unpacked* → select
+this directory.
 
-Or, for a throwaway profile: `npx web-ext run --source-dir .`
+**Firefox:** `about:debugging` → **This Firefox** → **Load Temporary Add-on…** → pick
+`manifest.json`. Or, for a throwaway profile: `npx web-ext run --source-dir .`
 
-Requires Firefox 142+ (`strict_min_version`), which is the floor for
-`data_collection_permissions`. The extension declares `"required": ["none"]`: it sends
-nothing to any third party, and its only network peer is your own Fastmail account.
+A temporary add-on is removed when Firefox restarts, and you will need to paste the API
+token again — a different profile means different storage. That is a property of the
+development install only; the signed `.xpi` above does not behave this way. Firefox 127+
+grants the declared host permissions at install; they can be revoked ad hoc from
+`about:addons`, so if requests start failing there, check that first.
 
-Temporary add-ons are removed when Firefox restarts, and you will need to paste the API
-token again (a different profile means different storage). Firefox 127+ grants the
-declared host permissions at install; they can be revoked ad hoc from `about:addons`, so
-if requests start failing there, check that first.
+To build and sign your own copy, `npm install` then:
 
-How the one manifest serves both browsers:
+```
+npx web-ext build --source-dir . --ignore-files 'test/**' 'docs/**' 'node_modules/**' \
+    'package*.json' 'README.md'
+```
+
+## One manifest, two browsers
+
+How the single manifest serves both:
 
 - `background.service_worker` for Chrome, `background.scripts` for Firefox. Firefox MV3
   supports event pages *only* — it has never supported service workers

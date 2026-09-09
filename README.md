@@ -379,7 +379,7 @@ Working in both browsers from one codebase, with no build step and no dependenci
 | Move to Trash, deep links | verified | untested (same code path as mark read) |
 | Watched folders: badge, preview, notifications | verified | verified |
 | Deep link to non-inbox mail | verified | verified |
-| Remote content fully blocked | untested | untested |
+| Remote content fully blocked | verified | verified |
 | Idle token revalidation | untested | untested |
 
 **Polling is the intended design, not a placeholder.** JMAP push via `eventSourceUrl`

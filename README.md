@@ -61,7 +61,7 @@ this directory as it stands — there is no build step and nothing to compile.
 this directory.
 
 **Firefox:** `about:debugging` → **This Firefox** → **Load Temporary Add-on…** → pick
-`manifest.json`. Or, for a throwaway profile: `npx web-ext run --source-dir .`
+`manifest.json`. Or, for a throwaway profile: `npm install` then `npm start`.
 
 A temporary add-on is removed when Firefox restarts, and you will need to paste the API
 token again — a different profile means different storage. That is a property of the
@@ -69,12 +69,10 @@ development install only; the signed `.xpi` above does not behave this way. Fire
 grants the declared host permissions at install; they can be revoked ad hoc from
 `about:addons`, so if requests start failing there, check that first.
 
-To build and sign your own copy, `npm install` then:
-
-```
-npx web-ext build --source-dir . --ignore-files 'test/**' 'docs/**' 'node_modules/**' \
-    'package*.json' 'README.md'
-```
+To build your own copy, `npm ci` then `npm run build`. The packaging tool is
+pinned in `package.json` and reads its file list from `web-ext-config.cjs`, so the
+result does not depend on what happens to be installed globally. `npm run sign`
+does the same and submits it to Mozilla for signing, which needs an AMO API key.
 
 ## One manifest, two browsers
 

@@ -8,20 +8,6 @@ unread count, and a preview window you can flip through unread mail in.
 chip and a "24 of 24" counter, above the rendered message body, with Mark read,
 Trash, Open and Inbox buttons along the bottom](docs/popup.png)
 
-## Why it needs an API token
-
-ignotifier rides your Gmail session cookie. **That approach does not work for
-Fastmail.** Its JMAP API is Bearer-token only and ignores cookies entirely:
-
-```
-GET  https://api.fastmail.com/jmap/session   (with cookies)  -> 401 No Authorization header
-POST https://<region>.api.fastmail.com/jmap/api/?u=...       -> 401 No Authorization header
-```
-
-So the extension asks for a Fastmail API token instead. This is the better trade:
-a real token gives a clean `401` when it expires, and a stable write path for
-marking read and trashing — both things ignotifier struggles with.
-
 ## Setup
 
 1. **Create a token.** In Fastmail: Settings → Privacy & Security →

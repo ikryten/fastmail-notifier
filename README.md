@@ -4,6 +4,10 @@ An unread-mail notifier for Fastmail, in the spirit of
 [ignotifier](https://github.com/inbasic/ignotifier): a toolbar badge with the
 unread count, and a preview window you can flip through unread mail in.
 
+![The preview window: one unread message with its sender, subject, an Inbox folder
+chip and a "24 of 24" counter, above the rendered message body, with Mark read,
+Trash, Open and Inbox buttons along the bottom](docs/popup.png)
+
 ## Why it needs an API token
 
 ignotifier rides your Gmail session cookie. **That approach does not work for
@@ -28,6 +32,15 @@ marking read and trashing — both things ignotifier struggles with.
    *Load unpacked* → select this directory.
 3. **Paste the token** into the extension's options page and hit *Verify & save*.
    It is checked against Fastmail before it is stored.
+
+<details>
+<summary>What the options page looks like</summary>
+
+![The options page: connection with a masked token, check interval, badge colour,
+the folder picker with Inbox ticked, notification and VIP settings, the remote
+images toggle, and the new-tab behaviour switch](docs/options.png)
+
+</details>
 
 ## Firefox
 

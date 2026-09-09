@@ -343,6 +343,49 @@ authenticated request, not from the sender's server.
   `downloadUrl`, and a sandboxed `<img>` cannot send a Bearer header — while
   `blob:` URLs are origin-scoped and unreadable from an opaque origin.
 
+## If you're thinking about multi-account support
+
+Wanted, not done. Contributions welcome — but check which of two quite different features
+you actually need first, because one is roughly a day's work and the other is the largest
+change since the Firefox port.
+
+**(a) Several JMAP accounts under one token** — a shared or delegated mailbox. RFC 8620's
+session object already carries an `accounts` map, and another user's mailbox shows up in
+it flagged `isPersonal: false`, usually `isReadOnly: true`. `jmap.bootstrap` reads
+`primaryAccounts['urn:ietf:params:jmap:mail']` and **discards `j.accounts` entirely**, so
+the data is already arriving and being thrown away.
+
+**(b) Several Fastmail logins, one token each.** Much bigger.
+
+Which one you are in is decided by your own session response, not by your plan — Duo and
+Family look like billing and administration constructs, so being on one probably does not
+by itself put the other members in your `accounts` map. One command settles it:
+
+```
+curl -s -H "Authorization: Bearer $TOKEN" https://api.fastmail.com/jmap/session \
+  | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['accounts'], indent=2))"
+```
+
+More than one entry means (a). If so, three things make it cheap, and they are worth
+knowing before you start:
+
+- **One token means the token-generation fencing stays exactly as it is.** That machinery
+  (see *Replacing the token*) is the subtlest code in the repo. Under (a) there is still
+  one token, one credential snapshot, one generation, and none of it has to generalise.
+  Under (b) it must become per-account, which is where the real bugs will be.
+- **`accountId` is an ordinary argument on every method call, and one request holds many**
+  (Fastmail advertises `maxCallsInRequest: 32`). So N accounts is still **one HTTP round
+  trip per poll** — 3N method calls instead of 3. Do not reach for a request per account;
+  the single round trip is the property this design is built around.
+- `isReadOnly` is in the session, so the popup can disable **Mark read** and **Trash** for
+  a shared mailbox rather than failing at write time; and `downloadUrl` already templates
+  `{accountId}`, which `cid:` inline images already rely on.
+
+Either way the remaining work is the same shape: carry an `accountId` on each summarised
+message through to the `body`/`markRead`/`trash` handlers, group the folder picker by
+account, add an account level above the folder level in the tooltip breakdown, and make
+notification ids `fmc:<accountId>:<emailId>` so a click opens the right mailbox.
+
 ## Tests
 
 ```

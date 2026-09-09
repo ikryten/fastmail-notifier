@@ -11,6 +11,31 @@ Fields the console asks for, drafted. Package built by `tools/package-chrome.py`
 Everything the extension does serves that one purpose: the badge is the count,
 the popup is the reading surface, and notifications announce arrivals.
 
+## Store description (user-facing)
+
+See how much unread mail is waiting, and read it, without opening a tab.
+
+- **Unread count on your toolbar.** A badge shows how many messages are waiting,
+  kept up to date in the background.
+- **Read without switching tabs.** Click the icon for a preview window and flip
+  through your unread mail — full HTML, images and all.
+- **Act on a message there and then.** Mark it read, send it to Trash, or open it
+  in Fastmail.
+- **Watch the folders you care about,** not just the Inbox. Have an *Important*
+  folder? Tick it, untick the Inbox, and hear about nothing else.
+- **Desktop notifications on your terms.** Optional, and can be limited to
+  specific senders so only the people who matter interrupt you.
+- **Block tracking pixels.** Turn remote images off and opening a message sends
+  nothing to the sender — no pixel, no IP address, no read receipt. Images
+  attached to the message still display, because those come from Fastmail.
+- **Your mail stays yours.** Nothing is collected, and nothing is sent anywhere
+  except your own Fastmail account.
+
+Requires a Fastmail account and an API token, which is free to create and takes
+about a minute in Settings → Privacy & Security → API tokens.
+
+Not affiliated with or endorsed by Fastmail.
+
 ## Permission justifications
 
 **storage** — Stores the user's Fastmail API token, their settings (poll

@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
 'use strict';
 /* Runs the real core/ modules against a mocked chrome.* and a mocked Fastmail.
    No token and no network: this checks the shape of what we send and the logic

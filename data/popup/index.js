@@ -407,9 +407,23 @@ function move(delta) {
 
 /* Drop the message locally and move on, rather than waiting for the next poll.
    The worker re-polls straight after the write, so the badge follows within
-   about half a second and reconciles anything we got wrong. */
-function dropCurrent() {
-  view.messages.splice(view.index, 1);
+   about half a second and reconciles anything we got wrong.
+
+   By id, and a no-op once it has gone, because the two paths race. The worker
+   finishes that re-poll before it answers, so the `update` it broadcasts can
+   rebuild the list here -- already without this message -- while we are still
+   awaiting the reply. Splicing by index at that point would take out whichever
+   innocent message had moved into the slot, and one action would drop the
+   counter by two. */
+function drop(id) {
+  const at = view.messages.findIndex(m => m.id === id);
+  if (at === -1) {
+    return;
+  }
+  view.messages.splice(at, 1);
+  if (at < view.index) {
+    view.index -= 1;
+  }
   if (view.index >= view.messages.length) {
     view.index = Math.max(0, view.messages.length - 1);
   }
@@ -430,7 +444,7 @@ async function act(button, method) {
       throw new Error((res && res.error) || 'Action failed');
     }
     view.bodies.delete(m.id);
-    dropCurrent();
+    drop(m.id);
   }
   catch (e) {
     overlay(e.message, true);
@@ -498,7 +512,11 @@ async function load() {
 
   if (current) {
     const at = messages.findIndex(m => m.id === current.id);
-    view.index = at === -1 ? 0 : at;
+    /* Not found means it was read or trashed since -- here, or in another client
+       -- and this poll is how we hear about it. Hold the position instead of
+       falling back to the top: the slot now holds the message below it, which is
+       where acting on one is meant to leave the reader. */
+    view.index = at === -1 ? Math.min(view.index, Math.max(0, messages.length - 1)) : at;
   }
   else if (resume && messages.length && messages[0].id === resume.head) {
     // Same head, so nothing has arrived since: pick up where we left off. A

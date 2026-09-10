@@ -32,17 +32,21 @@ function ok(name, cond, extra) {
 const eq = (name, a, b) => ok(name, JSON.stringify(a) === JSON.stringify(b),
   'got ' + JSON.stringify(a) + '\n       want ' + JSON.stringify(b));
 
+/* Values are cloned in and out, as the real extension storage does. Handing back
+   the stored object itself let a page splice the array a test was still holding,
+   so one test could quietly shorten the fixture the next one read. */
 function storageArea() {
   const data = {};
+  const copy = v => (v === undefined ? v : structuredClone(v));
   return {
     _data: data,
     async get(keys) {
-      if (keys == null) return {...data};
+      if (keys == null) return copy(data);
       const out = {};
-      for (const k of (Array.isArray(keys) ? keys : [keys])) if (k in data) out[k] = data[k];
+      for (const k of (Array.isArray(keys) ? keys : [keys])) if (k in data) out[k] = copy(data[k]);
       return out;
     },
-    async set(o) { this._writes++; Object.assign(data, o); },
+    async set(o) { this._writes++; Object.assign(data, copy(o)); },
     _writes: 0,
     async remove(keys) { for (const k of (Array.isArray(keys) ? keys : [keys])) delete data[k]; }
   };
@@ -77,7 +81,8 @@ function chromeStub(overrides) {
       getManifest: () => JSON.parse(read('manifest.json')),
       sendMessage: async () => ({ok: true}),
       openOptionsPage() {},
-      onMessage: {addListener() {}}
+      // Listeners are kept so a test can play the worker and broadcast to the page.
+      onMessage: {_listeners: [], addListener(fn) { this._listeners.push(fn); }}
     },
     action: {async setIcon() {}, async setBadgeText() {}, async setTitle() {},
              async setBadgeBackgroundColor() {}, async setPopup() {}}
@@ -492,7 +497,7 @@ const msg = (id, boxIds) => ({
 
 async function popupPage(messages, mailboxes, gen, stub) {
   stub = stub || chromeStub();
-  Object.assign(stub.storage.session._data, {messages, mailboxes, session: {username: 'me@x.com'}});
+  await stub.storage.session.set({messages, mailboxes, session: {username: 'me@x.com'}});
   Object.assign(stub.storage.local._data, {'token-gen': typeof gen === 'number' ? gen : 3});
   stub.runtime.sendMessage = async () => ({ok: true, email: {htmlBody: [], bodyValues: {}}});
   const w = page('data/popup/index.html', CORE.concat(['data/popup/index.js']), stub);
@@ -621,6 +626,39 @@ async function pageForward(w, n) {
   eq('trashing advances to the next message', counter(w), '3 of 4');
   eq('and the saved place followed it',
      (await stub.storage.session.get('resume')).resume.id, 'E4');
+}
+
+{
+  /* The same trash, with the worker's own ordering: it re-polls and broadcasts
+     before it answers, so `update` reaches the popup while the click is still
+     awaiting the reply. Removing by index at that point took out whichever
+     message had moved into the slot as well, so one action cost two: the badge
+     fell by one and the counter by two. */
+  const stub = chromeStub();
+  const w = await popupPage(LIST, MBOX, 3, stub);
+  await pageForward(w, 2);
+  eq('paged to the third message', counter(w), '3 of 5');
+
+  stub.runtime.sendMessage = async req => {
+    if (req.method === 'trash') {
+      await stub.storage.session.set({messages: LIST.filter(m => m.id !== 'E3')});
+      for (const fn of stub.runtime.onMessage._listeners) {
+        fn({method: 'update'});
+      }
+      /* The broadcast is already in the page; the reply still has a process
+         boundary to cross. Letting the reload finish first is what the worker
+         actually produces, and it is the ordering the bug needs. */
+      await new Promise(r => setTimeout(r, 5));
+    }
+    return {ok: true, email: {htmlBody: [], bodyValues: {}}};
+  };
+
+  w.document.getElementById('trash').click();
+  await new Promise(r => setTimeout(r, 20));
+  eq('a poll landing before the reply still costs exactly one message',
+     counter(w), '3 of 4');
+  eq('and the reader is on the message below the one trashed',
+     w.document.getElementById('subject').textContent, 'Subject E4');
 }
 
 {

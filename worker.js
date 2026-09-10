@@ -120,8 +120,28 @@ if (api.contextMenus) {
   });
 }
 
-/* Only fires when the popup is detached, i.e. nothing unread or not connected. */
-api.action.onClicked.addListener(async () => {
+/* Clicks on the toolbar button that the popup does not swallow.
+
+   A left click reaches here only when the popup is detached -- nothing unread,
+   or not connected -- because an attached popup consumes it.
+
+   A middle click reaches here either way, and checks now. Firefox fires
+   onClicked for it regardless of the popup, and reports which button was used,
+   precisely so an extension can answer the two differently; that has been the
+   behavior since Firefox 72, long before the 142 this add-on requires.
+
+   Firefox only, like the Options entry above, and for a firmer reason: Chrome's
+   onClicked carries no click data at all, so there is nothing to test, and it
+   stays silent while a popup is attached -- which here is whenever there is
+   unread mail, the very moment the shortcut is worth having. `info` is
+   undefined there, so every Chrome click falls through to the left-click path
+   below, exactly as before. */
+api.action.onClicked.addListener(async (tab, info) => {
+  if (info && info.button === 1) {
+    /* No re-entrancy worry, for the same reason as the menu entry: execute()
+       coalesces. The spinner on the button is the acknowledgement. */
+    return check.execute('middle-click');
+  }
   const token = await state.token();
   const count = await state.count();
   /* A stored token that Fastmail has since rejected is worse than no token at

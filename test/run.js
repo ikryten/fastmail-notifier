@@ -1275,6 +1275,71 @@ console.log('\n44. "Check now" polls on demand, in both browsers');
      JSON.stringify(calls));
 }
 
+console.log('\n45. middle-clicking the toolbar button checks now');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  const calls = [];
+  const ctx = load(server, calls, {worker: true});
+  await ctx.__api.storage.local.set({token: 'good'});
+
+  /* Drain first. Writing the token queues a poll of its own, and one settle can
+     return with a coalesced follow-up still to come -- which would count as the
+     click's own request and pass this whatever the handler did. */
+  let before;
+  do {
+    before = server.requests.length;
+    // The tick matters: the storage listener that queues that poll has not run
+    // yet at this point, so settle alone sees nothing in flight and returns
+    // straight away, leaving the poll to land on the click's own settle.
+    await new Promise(r => setTimeout(r, 5));
+    await settle(ctx);
+  } while (server.requests.length !== before);
+
+  await ctx.__api.action.onClicked._fire({id: 1}, {button: 1, modifiers: []});
+  await settle(ctx);
+  ok('a middle click goes to the server', server.requests.length > before,
+     'requests: ' + before + ' -> ' + server.requests.length);
+  ok('and does not open webmail as well',
+     !calls.some(c => c[0] === 'tab' || c[0] === 'update'), JSON.stringify(calls));
+
+  /* Same coalescing as the menu entry, and it matters more here: the button is
+     easy to click repeatedly. */
+  const mid = server.requests.length;
+  // Fired together, not one after the other: the browser does not wait for one
+  // listener call to settle before making the next, and waiting here would test
+  // three separate checks rather than a burst.
+  await Promise.all([1, 2, 3].map(
+    () => ctx.__api.action.onClicked._fire({id: 1}, {button: 1, modifiers: []})));
+  await settle(ctx);
+  ok('three rapid middle clicks coalesce', server.requests.length - mid <= 2,
+     'polls: ' + (server.requests.length - mid));
+
+  /* Button 0 is a left click, and Chrome sends no click data at all. Both must
+     keep the old behavior: with a good token and a live count, open webmail. */
+  for (const info of [{button: 0, modifiers: []}, undefined]) {
+    calls.length = 0;
+    const quiet = server.requests.length;
+    await ctx.__api.action.onClicked._fire({id: 1}, info);
+    await settle(ctx);
+    ok((info ? 'a left click' : 'a Chrome click, which reports no button') +
+       ' still opens webmail',
+       calls.some(c => /app\.fastmail\.com/.test(String(c[1]))), JSON.stringify(calls));
+    ok('and does not poll instead', server.requests.length === quiet,
+       'polls: ' + (server.requests.length - quiet));
+  }
+
+  // A middle click with a dead token must not silently do nothing.
+  await ctx.__api.storage.local.set({token: 'revoked'});
+  await ctx.state.clearResult();
+  await settle(ctx);
+  calls.length = 0;
+  await ctx.__api.action.onClicked._fire({id: 1}, {button: 1, modifiers: []});
+  await settle(ctx);
+  ok('a middle click on a dead-token button still says so on the badge',
+     calls.some(c => c[0] === 'title' && /token|sign|option/i.test(String(c[1]))),
+     JSON.stringify(calls));
+}
+
 }
 
 console.log('\n' + (fail ? '\x1b[31m' : '\x1b[32m') + pass + ' passed, ' + fail + ' failed\x1b[0m\n');

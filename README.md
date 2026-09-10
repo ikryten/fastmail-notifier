@@ -188,6 +188,13 @@ This is the one thing that puts `contextMenus` in the Chrome package. Until *Che
 existed the Chrome build never made a menu at all, and `tools/package-chrome.py` stripped
 the permission on the way to the Web Store.
 
+**On Firefox, a middle click on the toolbar button does the same thing**, without opening
+the menu or the popup. Firefox reports which button was used and fires the click event for
+a middle click whether or not a popup is attached, exactly so an add-on can answer the two
+differently. Chrome reports no button at all and stays silent while a popup is attached,
+which here is whenever there is unread mail, so there is nothing to hook: use the menu
+item there. No extra permission either way.
+
 ## Folders to watch
 
 **Options → Folders to watch** lists your mailboxes. A ticked folder is counted on the

@@ -47,8 +47,12 @@ the repository, frozen, and the reasons are below.
 4. `npm run sign`, with `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET` set from the
    AMO credentials. On the listed channel this submits the version for review
    rather than countersigning on the spot, so it can sit in the queue for days.
-   Release notes and any listing changes go in through the Developer Hub, or
-   through `--amo-metadata` if it ever becomes worth scripting.
+   `--approval-timeout=0` is why the command returns instead of waiting: the
+   default is fifteen minutes, which a review queue overruns, and a timeout there
+   looks like a failed submission when the upload in fact succeeded. Nothing is
+   downloaded either, because a listed add-on is distributed by AMO rather than
+   from here. Release notes and any listing changes go in through the Developer
+   Hub, or through `--amo-metadata` if it ever becomes worth scripting.
 5. `python3 tools/package-chrome.py` for the Web Store zip.
 
 There is no GitHub release step any more, and no hash to record anywhere. Tagging

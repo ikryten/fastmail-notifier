@@ -9,7 +9,7 @@
     "start": "web-ext run",
     "lint": "web-ext lint",
     "build": "web-ext build --overwrite-dest",
-    "sign": "web-ext sign --channel=listed"
+    "sign": "web-ext sign --channel=listed --approval-timeout=0"
   },
   "devDependencies": {
     "jsdom": "^27.0.0",

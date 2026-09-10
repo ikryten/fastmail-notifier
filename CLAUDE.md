@@ -52,7 +52,15 @@ the repository, frozen, and the reasons are below.
    looks like a failed submission when the upload in fact succeeded. Nothing is
    downloaded either, because a listed add-on is distributed by AMO rather than
    from here. Release notes and any listing changes go in through the Developer
-   Hub, or through `--amo-metadata` if it ever becomes worth scripting.
+   Hub.
+
+   `--amo-metadata=tools/amo-metadata.json` supplies the licence, which AMO
+   requires on every listed version and rejects the submission for omitting. It
+   lives under `tools/` because that directory is already excluded from the
+   package by `web-ext-config.cjs`; a new top-level file would have to be added
+   to that list by hand or it would ship. Only the licence goes in it, because
+   that is the part which never changes. Release notes are per-version and belong
+   in the Hub, where a stale value cannot be committed by accident.
 5. `python3 tools/package-chrome.py` for the Web Store zip.
 
 There is no GitHub release step any more, and no hash to record anywhere. Tagging

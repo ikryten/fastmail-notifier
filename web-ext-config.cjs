@@ -4,7 +4,7 @@
 
 /* What goes into the Firefox package, stated once so a build is reproducible
    and a new top-level file cannot wander into a signed artifact unnoticed.
-   The extension is the manifest, worker.js, core/ and data/, plus the licence
+   The extension is the manifest, worker.js, core/ and data/, plus the license
    the MPL requires to travel with the source. Everything else here is
    development scaffolding. */
 module.exports = {

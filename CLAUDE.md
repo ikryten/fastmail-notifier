@@ -12,7 +12,8 @@ says "colour" is worse than either choice on its own.
 The forms that were actually in this codebase, so they are the ones likely to
 come back: color, behavior, honor, localized, normalized/normalizing,
 recognize/unrecognized, sanitize/sanitized/sanitizer/sanitization, summarize,
-defense, labeled, gray.
+defense, labeled, gray, license (the noun as well as the verb; never
+"licence").
 
 ## Structure
 
@@ -54,11 +55,11 @@ the repository, frozen, and the reasons are below.
    from here. Release notes and any listing changes go in through the Developer
    Hub.
 
-   `--amo-metadata=tools/amo-metadata.json` supplies the licence, which AMO
+   `--amo-metadata=tools/amo-metadata.json` supplies the license, which AMO
    requires on every listed version and rejects the submission for omitting. It
    lives under `tools/` because that directory is already excluded from the
    package by `web-ext-config.cjs`; a new top-level file would have to be added
-   to that list by hand or it would ship. Only the licence goes in it, because
+   to that list by hand or it would ship. Only the license goes in it, because
    that is the part which never changes. Release notes are per-version and belong
    in the Hub, where a stale value cannot be committed by accident.
 5. `python3 tools/package-chrome.py` for the Web Store zip.

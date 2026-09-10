@@ -32,25 +32,27 @@ defense, labeled, gray.
 
 ## Releasing
 
-The Firefox build is self-distributed, which means nothing on a server keeps the
-pieces in step. Order matters, because the update manifest records a hash of the
-signed file and Mozilla's signature is applied after the version is fixed:
+The Firefox build is listed on addons.mozilla.org from 1.0.3, so Mozilla reviews
+each version and delivers updates. Before that it was self-distributed from GitHub
+releases, with `update_url` pointing at `updates.json` here; that file is still in
+the repository, frozen, and the reasons are below.
 
 1. `npm ci`, then bump `version` in `manifest.json` and `package.json` (they must
-   match).
+   match). AMO refuses a version number it has already seen, on either channel, so
+   a bounced submission still burns the number.
 2. `npm run lint` — zero errors. One `BACKGROUND_SERVICE_WORKER_IGNORED` warning
    is expected and correct: the key is there for Chrome.
-3. `npm run sign`, with `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET` set from the
-   AMO credentials. This uploads, waits for Mozilla to countersign, and downloads
-   the result.
-4. Rename the signed file to `fastmail_notifier-<version>.xpi` and attach it to a
-   GitHub release tagged `v<version>`.
-5. Add an entry to `updates.json` with that release's download URL and the
-   `sha256:` digest of the signed file. Firefox verifies the download against it.
-6. `npm test`. `test/release.js` checks the whole chain and fails if any link is
-   missing — it exists because a forgotten step here breaks updates silently,
-   with no error anywhere for anyone to see.
-7. `python3 tools/package-chrome.py` for the Web Store zip.
+3. `npm test`. `test/release.js` is what stops `update_url` coming back and what
+   keeps `updates.json` from being extended.
+4. `npm run sign`, with `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET` set from the
+   AMO credentials. On the listed channel this submits the version for review
+   rather than countersigning on the spot, so it can sit in the queue for days.
+   Release notes and any listing changes go in through the Developer Hub, or
+   through `--amo-metadata` if it ever becomes worth scripting.
+5. `python3 tools/package-chrome.py` for the Web Store zip.
+
+There is no GitHub release step any more, and no hash to record anywhere. Tagging
+`v<version>` is still worth doing to mark what was submitted.
 
 Run the tool through `npm run`, never `npx web-ext`. web-ext is pinned to an
 exact version in `package.json` rather than a caret range, because it is the only
@@ -61,7 +63,16 @@ failing test, whereas a bad web-ext shows up in a signed artifact after the fact
 What goes into the signed package is fixed by `web-ext-config.cjs`, not by
 command-line flags, so a new top-level file cannot drift into a release.
 
-`update_url` must never appear in anything submitted to AMO for listing: the
-add-on linter raises `MANIFEST_UPDATE_URL` as an error, not a warning. It is safe
-in the unlisted channel, which is how this add-on is distributed, and the Chrome
-packaging script strips `browser_specific_settings` entirely.
+`update_url` must never come back. The add-on linter raises `MANIFEST_UPDATE_URL`
+as an error rather than a warning, so a listed submission carrying it is rejected
+outright instead of flagged. `npm run lint` catches it now that the `--self-hosted`
+flag is gone, and `test/release.js` catches it without running the linter at all.
+The Chrome packaging script strips `browser_specific_settings` entirely, so nothing
+in that area reaches the Web Store either way.
+
+`updates.json` is kept rather than deleted, and must not be extended. Installs made
+before the move still read it on Firefox's own schedule; deleting it would turn
+their update check into a 404, which is invisible to the person running them. They
+stay on 1.0.2 until someone installs from AMO by hand, which is the accepted cost
+of the move. Adding an entry would be worse than useless: it would offer a release
+asset that no longer gets published.

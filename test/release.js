@@ -5,12 +5,17 @@
 'use strict';
 /* Release wiring.
 
-   Firefox self-distribution has no server keeping anything in step: the browser
-   reads `updates.json` out of this repository, believes whatever it says, and
-   fails silently if it is wrong. Bumping the version in manifest.json and
-   forgetting this file leaves every install frozen with nothing to notice --
-   which is precisely the failure the update manifest exists to prevent, so it
-   gets a test rather than a checklist item. */
+   This file used to check the self-distribution chain: manifest, updates.json,
+   release asset and hash all agreeing, because nothing on a server kept them in
+   step and a mistake broke updates silently. From 1.0.3 the Firefox build is
+   listed on addons.mozilla.org and Mozilla delivers updates, so most of that
+   chain is gone.
+
+   What replaced it is a smaller rule with sharper teeth. `update_url` must not
+   come back. The add-on linter raises MANIFEST_UPDATE_URL as an error rather
+   than a warning, so a listed submission carrying it is rejected outright --
+   and the obvious way for it to reappear is someone reading updates.json, still
+   sitting in this repository, and concluding the key belongs with it. */
 
 const fs = require('fs');
 const path = require('path');
@@ -29,65 +34,56 @@ const eq = (name, a, b) => ok(name, JSON.stringify(a) === JSON.stringify(b),
 
 const manifest = json('manifest.json');
 const pkg = json('package.json');
-const updates = json('updates.json');
 const gecko = manifest.browser_specific_settings.gecko;
-const REPO = 'ikryten/fastmail-notifier';
 
 console.log('\n1. the version is the same number everywhere');
 eq('package.json matches manifest.json', pkg.version, manifest.version);
 
-console.log('\n2. the manifest points at this repository\'s update file');
+console.log('\n2. nothing submitted to AMO may carry update_url');
 {
-  const want = 'https://raw.githubusercontent.com/' + REPO + '/master/updates.json';
-  eq('update_url', gecko.update_url, want);
-  // Firefox refuses a plain-http update URL outright, so this is not style.
-  ok('served over https', /^https:/.test(gecko.update_url || ''));
+  /* An error, not a warning: AMO rejects the submission rather than flagging it,
+     so this is the difference between a release and a bounced upload. */
+  ok('the manifest does not declare one', !('update_url' in gecko),
+     JSON.stringify(gecko));
+  ok('and it appears nowhere else in the manifest',
+     !JSON.stringify(manifest).includes('update_url'));
 }
 
-console.log('\n3. updates.json describes this add-on');
+console.log('\n3. the add-on still identifies itself to Firefox');
 {
-  const ids = Object.keys(updates.addons || {});
-  eq('exactly one add-on, keyed by the gecko id', ids, [gecko.id]);
+  /* The id is what ties this build to the AMO listing and to every profile that
+     already has it installed. Losing it would publish a different add-on under
+     the same name and strand every existing install. */
+  eq('the gecko id is unchanged', gecko.id, 'fastmail-notifier@ikryten.com');
+  ok('and it names the Firefox it needs',
+     Boolean(gecko.strict_min_version), JSON.stringify(gecko));
+  /* AMO requires the declaration outright from Firefox 142, which is what
+     strict_min_version is pinned to. */
+  ok('and declares its data collection',
+     Boolean(gecko.data_collection_permissions &&
+             gecko.data_collection_permissions.required),
+     JSON.stringify(gecko.data_collection_permissions));
 }
 
-const entries = updates.addons[gecko.id].updates;
-
-console.log('\n4. every published version is well formed');
-for (const e of entries) {
-  const tag = 'v' + e.version;
-  const file = 'fastmail_notifier-' + e.version + '.xpi';
-  const want = 'https://github.com/' + REPO + '/releases/download/' + tag + '/' + file;
-  eq(e.version + ': update_link is the release asset for its own version', e.update_link, want);
-  /* An update_link is only as trustworthy as the host serving it. The hash makes
-     the browser verify the bytes it downloaded against something committed here,
-     signed history, rather than trusting the download alone. */
-  ok(e.version + ': update_hash is a sha256 digest',
-     /^sha256:[0-9a-f]{64}$/.test(e.update_hash || ''), String(e.update_hash));
-  ok(e.version + ': names the Firefox it needs',
-     Boolean(e.applications && e.applications.gecko &&
-             e.applications.gecko.strict_min_version), JSON.stringify(e.applications));
+console.log('\n4. updates.json is frozen, not maintained');
+{
+  /* Kept, not deleted: installs from before the move still read it on Firefox's
+     schedule, and removing it would turn their update check into a 404. It
+     describes the self-distributed past and must not grow, because nothing
+     reads it that this repository can still serve. */
+  const updates = json('updates.json');
+  const entries = updates.addons[gecko.id].updates;
+  const versions = entries.map(e => e.version);
+  eq('it lists exactly the self-distributed versions',
+     versions, ['1.0.0', '1.0.1', '1.0.2']);
+  ok('and does not offer anything this build ships',
+     !versions.includes(manifest.version),
+     'an entry for ' + manifest.version + ' would point at a release that ' +
+     'does not exist; AMO delivers this version');
 }
 
-console.log('\n5. the version being shipped is actually offered');
+console.log('\n5. the Chrome package is still Chrome-only');
 {
-  const here = entries.find(e => e.version === manifest.version);
-  ok('updates.json has an entry for ' + manifest.version, Boolean(here),
-     'versions listed: ' + entries.map(e => e.version).join(', '));
-  if (here) {
-    /* Mismatched floors are the quiet kind of broken: Firefox trusts the update
-       manifest when deciding whether an update applies, so a lower number here
-       offers the build to a browser too old to run it. */
-    eq('and its minimum Firefox matches the manifest',
-       here.applications.gecko.strict_min_version, gecko.strict_min_version);
-  }
-}
-
-console.log('\n6. the Chrome package cannot carry update_url');
-{
-  /* AMO rejects a listed submission containing update_url outright -- the
-     add-on linter raises MANIFEST_UPDATE_URL as an error, not a warning -- and
-     the Chrome Web Store has no use for any of this. The packaging script drops
-     browser_specific_settings wholesale; this proves it still does. */
   let chrome = null;
   try {
     chrome = JSON.parse(execFileSync('python3', ['-c',
@@ -105,8 +101,8 @@ console.log('\n6. the Chrome package cannot carry update_url');
   if (chrome) {
     ok('no browser_specific_settings at all',
        !('browser_specific_settings' in chrome), JSON.stringify(Object.keys(chrome)));
-    ok('so no update_url reaches the Web Store',
-       !JSON.stringify(chrome).includes('update_url'));
+    ok('and no Firefox event-page key to warn about',
+       !('scripts' in chrome.background), JSON.stringify(chrome.background));
     eq('and it ships the same version', chrome.version, manifest.version);
   }
 }

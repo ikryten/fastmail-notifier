@@ -106,10 +106,9 @@ other than the user's own Fastmail account.
 only what Chrome actually uses:
 
 - `background.scripts` — Firefox MV3 uses event pages; Chrome warns about this key
-- `browser_specific_settings` — the Gecko id, minimum version, data collection
-  declaration, and the `update_url` the Firefox build uses to update itself
-  outside addons.mozilla.org. The Chrome package therefore contains no update
-  mechanism of its own; the Web Store handles that
+- `browser_specific_settings` — the Gecko id, minimum version and data collection
+  declaration. Firefox-only metadata, and nothing to do with updates: both builds
+  are store-delivered now, the Web Store here and addons.mozilla.org there
 
 The `contextMenus` permission was stripped here too until *Check now* was added.
 Back then the only menu item was Options, which Chrome puts on the action button

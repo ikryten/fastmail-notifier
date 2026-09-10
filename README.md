@@ -13,18 +13,17 @@ Trash, Open and Inbox buttons along the bottom](docs/popup.png)
 
 ## Install
 
-**Firefox.** Paste the `.xpi` link from
-[Releases](https://github.com/ikryten/fastmail-notifier/releases) into the address bar on
-any machine and Firefox installs it there and then — GitHub serves the asset as
-`application/x-xpinstall`, so there is no download step and no file to copy around.
-Mozilla countersigns it for self-distribution, so it installs permanently and survives
-restarts.
+**Firefox.** Install from
+[addons.mozilla.org](https://addons.mozilla.org/firefox/addon/fastmail-notifier/). Mozilla
+reviews each version and delivers updates, so there is nothing to keep current by hand.
 
-From 1.0.1 onward it keeps itself current. AMO delivers updates only for the add-ons it
-hosts, so a self-distributed one has to say where to look: the manifest's `update_url`
-points at [`updates.json`](updates.json) in this repository, and Firefox reads it on its
-own schedule. Nothing is sent in that request, and `test/release.js` fails the build if
-that file and the manifest ever disagree about the current version.
+Versions up to 1.0.2 were self-distributed from this repository's releases instead, with
+the manifest pointing Firefox at [`updates.json`](updates.json) for updates. From 1.0.3
+that is over: the add-on is listed, and `update_url` is gone because AMO rejects a
+submission carrying it. **An install from before the move will not find its way to AMO on
+its own.** It keeps reading `updates.json`, which is frozen at 1.0.2, so it sits there
+quietly until you install from the link above. The file stays in the repository purely so
+those installs get a stale answer rather than a 404.
 
 Requires **Firefox 142+** (`strict_min_version`), the floor for
 `data_collection_permissions` — the extension declares `"required": ["none"]`. It sends
@@ -65,14 +64,15 @@ this directory.
 
 A temporary add-on is removed when Firefox restarts, and you will need to paste the API
 token again — a different profile means different storage. That is a property of the
-development install only; the signed `.xpi` above does not behave this way. Firefox 127+
+development install only; the reviewed build from AMO does not behave this way. Firefox 127+
 grants the declared host permissions at install; they can be revoked ad hoc from
 `about:addons`, so if requests start failing there, check that first.
 
 To build your own copy, `npm ci` then `npm run build`. The packaging tool is
 pinned in `package.json` and reads its file list from `web-ext-config.cjs`, so the
 result does not depend on what happens to be installed globally. `npm run sign`
-does the same and submits it to Mozilla for signing, which needs an AMO API key.
+submits a version to AMO for review, which needs an AMO API key and is only useful
+if you are the one publishing it.
 
 ## One manifest, two browsers
 

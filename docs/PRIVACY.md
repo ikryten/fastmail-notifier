@@ -66,14 +66,17 @@ message still display, because those come from Fastmail rather than the sender.
 **Links you click** in a message open in a new tab, as they would from any mail
 client. That request goes wherever the link points, at your instruction.
 
-**Update checks, made by Firefox rather than by this extension.** The Firefox
-build is distributed outside addons.mozilla.org, so Mozilla does not deliver its
-updates. Instead Firefox periodically reads a small file from
-`raw.githubusercontent.com` listing the current version, and downloads the new
-package from `github.com` when there is one. Those requests come from the browser
-itself, on its own schedule. They carry no token and nothing about your mail, and
-tell GitHub only what fetching any public URL tells it: your IP address and
-roughly when you checked. The Chrome package omits this mechanism entirely.
+**Update checks, made by the browser rather than by this extension.** From 1.0.3
+the Firefox build is listed on addons.mozilla.org, so Firefox checks Mozilla for
+updates the way it does for any add-on you install from there. Chrome does the
+same through the Web Store. Those requests come from the browser itself, on its
+own schedule, and carry no token and nothing about your mail.
+
+Firefox builds up to 1.0.2 were distributed from GitHub instead, and an install
+from that era still reads a small file from `raw.githubusercontent.com` on the same
+schedule. That request tells GitHub only what fetching any public URL tells it:
+your IP address and roughly when you checked. It stops once you install from
+addons.mozilla.org.
 
 ## What this extension does not do
 

@@ -175,6 +175,19 @@ Chrome adds one of those itself for any extension declaring `options_ui`; Firefo
 not, so the item is created only on Gecko — detected with `runtime.getBrowserInfo`, a
 Firefox-only API, rather than by sniffing the user agent.
 
+## Checking on demand
+
+The same context menu carries a **Check now** item, in both browsers: neither offers an
+equivalent of its own, so unlike Options there is nothing to duplicate. It polls straight
+away rather than waiting out the rest of the interval, which is what you want when you
+know something has just been sent to you. Clicking it during a check in flight is
+harmless — `check.execute` coalesces, so it queues one follow-up instead of starting a
+second poll.
+
+This is the one thing that puts `contextMenus` in the Chrome package. Until *Check now*
+existed the Chrome build never made a menu at all, and `tools/package-chrome.py` stripped
+the permission on the way to the Web Store.
+
 ## Folders to watch
 
 **Options → Folders to watch** lists your mailboxes. A ticked folder is counted on the

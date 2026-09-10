@@ -100,10 +100,11 @@ roughly when you checked. The Chrome package omits this mechanism entirely.
 `storage` keeps your token and settings. `alarms` schedules the periodic check.
 `idle` refreshes the count when you return to your machine — it is told only
 whether you are active, never what you are doing. `notifications` shows new-mail
-alerts, if you enable them. `contextMenus` adds an *Options* entry to the toolbar
-button's right-click menu; this one is Firefox-only, and the Chrome build does not
-request it, because Chrome provides that entry itself. The Fastmail host
-permissions are what let the extension reach your account. None of these is used
+alerts, if you enable them. `contextMenus` puts a *Check now* entry on the
+toolbar button's right-click menu, and on Firefox an *Options* entry beside it,
+which Chrome already provides itself; the menu appears on this extension's own
+button and nowhere else. The Fastmail host permissions are what let the extension
+reach your account. None of these is used
 for any other purpose.
 
 ## Changes

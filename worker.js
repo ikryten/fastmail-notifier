@@ -60,12 +60,19 @@ async function openWebmail(emailId) {
   }
 }
 
-/* A route to Options from the toolbar button that works even when the popup is
-   detached -- which is exactly the state a revoked token leaves you in.
+/* The toolbar button's right-click menu.
 
-   Firefox only. Chrome already adds its own "Options" entry to the action context
-   menu for any extension declaring options_ui, so adding ours there would just
-   duplicate it.
+   "Check now" is there because the periodic poll is the only thing that moves the
+   count on its own, and waiting out the rest of a period is the wrong answer when
+   you know mail has arrived. It reaches the menu in both browsers: neither one
+   offers anything like it, and unlike Options it has no built-in equivalent to
+   duplicate.
+
+   "Options" is Firefox only. Chrome already adds its own entry for any extension
+   declaring options_ui, so adding ours there would sit directly beneath it saying
+   the same thing. Firefox adds none, and this is the route to Options that still
+   works when the popup is detached -- exactly the state a revoked token leaves you
+   in.
 
    Rebuilt rather than created blind: Chrome persists menus across worker restarts
    and rejects a duplicate id, while a Firefox event page loses them each browser
@@ -73,30 +80,41 @@ async function openWebmail(emailId) {
    the MV3 spelling and is supported by Firefox too ('browser_action' was the MV2
    name). */
 async function buildMenu() {
-  if (!IS_GECKO || !api.contextMenus) {
+  if (!api.contextMenus) {
     return;
   }
   try {
     await api.contextMenus.removeAll();
     await api.contextMenus.create({
-      id: 'fmc-options',
-      title: 'Options',
+      id: 'fmc-check',
+      title: 'Check now',
       contexts: ['action']
     });
+    if (IS_GECKO) {
+      await api.contextMenus.create({
+        id: 'fmc-options',
+        title: 'Options',
+        contexts: ['action']
+      });
+    }
   }
   catch (e) {
     console.warn('[worker] could not build the context menu', e);
   }
 }
 
-/* Guarded on the API rather than on IS_GECKO: the Chrome Web Store build drops
-   the contextMenus permission, since Chrome puts Options on the action button
-   itself and buildMenu() never runs there. Without the permission the namespace
-   is undefined, and an unguarded addListener here would throw at worker startup
-   and take the whole extension down with it. */
+/* Guarded, because a build without the contextMenus permission has no such
+   namespace at all, and an unguarded addListener here would throw at worker
+   startup and take the whole extension down with it -- silently, since nothing
+   after it would get to run. */
 if (api.contextMenus) {
   api.contextMenus.onClicked.addListener(info => {
-    if (info.menuItemId === 'fmc-options') {
+    if (info.menuItemId === 'fmc-check') {
+      /* No re-entrancy worry: execute() coalesces, so clicking this during a poll
+         queues one follow-up rather than starting a second. */
+      check.execute('menu');
+    }
+    else if (info.menuItemId === 'fmc-options') {
       api.runtime.openOptionsPage();
     }
   });

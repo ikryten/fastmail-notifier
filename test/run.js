@@ -484,13 +484,16 @@ console.log('\n20. a dead token must still lead to Options');
     // Chrome persists menus across worker restarts and rejects a duplicate id;
     // a Firefox event page loses them each session. removeAll-then-create suits both.
     await ctx.__api.runtime.onStartup._fire();
-    eq('rebuilding leaves exactly one item',
-       Object.keys(ctx.__api.contextMenus._items), ['fmc-options']);
+    eq('rebuilding leaves the same two items, not four',
+       Object.keys(ctx.__api.contextMenus._items), ['fmc-check', 'fmc-options']);
   }
   else {
     // Chrome adds its own Options entry for any extension declaring options_ui.
-    ok('Chrome: no item is added, so Options is not duplicated', !menu,
+    ok('Chrome: no Options item is added, so Chrome\'s own is not duplicated', !menu,
        'items: ' + JSON.stringify(Object.keys(ctx.__api.contextMenus._items)));
+    await ctx.__api.runtime.onStartup._fire();
+    eq('and rebuilding still leaves exactly one item',
+       Object.keys(ctx.__api.contextMenus._items), ['fmc-check']);
   }
 
   // A token Fastmail has rejected is still *stored*, so the old guard passed it
@@ -1188,10 +1191,11 @@ console.log('\n42. a message rotating into the page is not new mail');
 
 console.log('\n43. the worker survives without the contextMenus permission');
 {
-  /* The Chrome Web Store package drops contextMenus, because Chrome puts Options
-     on the action button itself and buildMenu never runs there. An unguarded
-     addListener at the top of worker.js would then throw during startup and take
-     the entire extension down -- silently, since nothing else would get to run. */
+  /* Both packages now ship the permission, since "Check now" is built in both
+     browsers -- but the guard on the namespace stays, and so does this. Without
+     the permission the namespace does not exist at all, and an unguarded
+     addListener at the top of worker.js would throw during startup and take the
+     entire extension down -- silently, since nothing else would get to run. */
   const server = {token: 'good', requests: [], sets: [], unread: []};
   const calls = [];
   let threw = null;
@@ -1220,6 +1224,54 @@ console.log('\n43. the worker survives without the contextMenus permission');
   calls.length = 0;
   await ctx.__api.action.onClicked._fire();
   ok('a dead-token click still reaches Options', calls.some(c => c[0] === 'options'),
+     JSON.stringify(calls));
+
+  // The menu is gone, but nothing else may be: no menu must not mean no polling.
+  ok('and no menu was built', !ctx.__api.contextMenus,
+     'namespace unexpectedly present');
+}
+
+console.log('\n44. "Check now" polls on demand, in both browsers');
+{
+  const server = {token: 'good', requests: [], sets: [], unread: []};
+  const calls = [];
+  const ctx = load(server, calls, {worker: true});
+  await ctx.__api.storage.local.set({token: 'good'});
+  await ctx.__api.runtime.onInstalled._fire();
+
+  const item = ctx.__api.contextMenus._items['fmc-check'];
+  /* Unlike Options, this one has no built-in equivalent in either browser, so it
+     is built on both -- and it is what puts contextMenus in the Chrome package. */
+  ok('the item exists', Boolean(item),
+     'items: ' + JSON.stringify(Object.keys(ctx.__api.contextMenus._items)));
+  eq('with the label the user sees', item && item.title, 'Check now');
+  eq('on the action context, not on pages', item && item.contexts, ['action']);
+
+  await settle(ctx);
+  const before = server.requests.length;
+  await ctx.__api.contextMenus.onClicked._fire({menuItemId: 'fmc-check'});
+  await settle(ctx);
+  ok('choosing it goes to the server', server.requests.length > before,
+     'requests: ' + before + ' -> ' + server.requests.length);
+
+  /* Clicking during a poll must not start a second one. execute() coalesces, so
+     the burst collapses into the run in flight plus one queued follow-up. */
+  const mid = server.requests.length;
+  await ctx.__api.contextMenus.onClicked._fire({menuItemId: 'fmc-check'});
+  await ctx.__api.contextMenus.onClicked._fire({menuItemId: 'fmc-check'});
+  await ctx.__api.contextMenus.onClicked._fire({menuItemId: 'fmc-check'});
+  await settle(ctx);
+  const polls = server.requests.length - mid;
+  ok('three rapid clicks coalesce rather than stacking up polls', polls <= 2,
+     'polls: ' + polls);
+
+  // An unrecognized id must be ignored, not treated as one of ours.
+  calls.length = 0;
+  const quiet = server.requests.length;
+  await ctx.__api.contextMenus.onClicked._fire({menuItemId: 'something-else'});
+  await settle(ctx);
+  ok('another extension\'s menu id does nothing',
+     server.requests.length === quiet && !calls.some(c => c[0] === 'options'),
      JSON.stringify(calls));
 }
 

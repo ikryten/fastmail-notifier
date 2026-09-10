@@ -5,10 +5,6 @@ The repository ships one manifest that serves both browsers, which is right for
 development and for Firefox. Two of its keys are meaningless to Chrome, and
 shipping them to the Web Store is worse than untidy:
 
-  * `contextMenus` -- worker.js only builds a menu on Gecko, because Chrome
-    already puts Options on the action button itself. Declaring a permission the
-    Chrome build never exercises is the kind of thing review rejects, and
-    rightly.
   * `background.scripts` -- Firefox MV3 has event pages, not service workers.
     Chrome ignores the key but warns "'background.scripts' requires manifest
     version of 2 or lower" on every load.
@@ -16,7 +12,13 @@ shipping them to the Web Store is worse than untidy:
   * `browser_specific_settings` -- the Gecko id, minimum version and data
     collection declaration. Firefox-only metadata.
 
-So this strips those three for the Chrome artifact and leaves the source alone.
+`contextMenus` used to be stripped alongside them, back when the only menu item
+was Options and worker.js built it on Gecko alone -- Chrome puts Options on the
+action button itself, so the Chrome build genuinely never exercised the
+permission. "Check now" changed that: Chrome offers no equivalent, so the Chrome
+build now builds a menu too and the permission has to ship with it.
+
+So this strips those two for the Chrome artifact and leaves the source alone.
 Nothing else is transformed: no bundling, no minification, no code generation.
 """
 
@@ -31,7 +33,6 @@ INCLUDE_DIRS = ['core', 'data']
 
 def chrome_manifest():
     m = json.loads((ROOT / 'manifest.json').read_text())
-    m['permissions'] = [p for p in m['permissions'] if p != 'contextMenus']
     m['background'] = {'service_worker': m['background']['service_worker']}
     m.pop('browser_specific_settings', None)
     return m

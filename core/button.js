@@ -7,31 +7,39 @@
 /* Toolbar button. Every api.action call lives here so the Firefox port and
    any future polyfill have exactly one place to land.
 
-   Icon states:
-     gray  - authenticated, nothing unread
-     red   - unread mail waiting
-     new   - brief flash when mail arrives (alternates with red)
-     load  - spinner while a check is in flight
-   The logged-out case reuses `gray` plus an amber "!" badge rather than a fifth
-   icon set: it reads as "something needs your attention" without another asset. */
+   Icon states, one directory of PNGs each under data/icons:
+     idle       - the browser has started and we have not fetched anything yet
+     checking   - a check is in flight
+     connected  - a working connection, whatever the count; the badge carries that
+     newmail    - FLASH_MS after mail arrives, then back to connected
+     error      - no token, a rejected token, or a check that failed
+   How many are unread is the badge's job, not the icon's, so `connected` covers
+   an empty inbox and a full one alike. `error` carries an amber "!" badge when
+   the cause is the token, which is the one the user can do something about. */
 
 const button = {
   AMBER: '#f9ab00',
 
-  /* How long the spinner is held before anything may paint over it, and the
-     deadline it is holding until.
+  /* The spinner's two timings, and the deadline it is currently holding until.
 
-     Only checks a person asked for set it. A warm steady-state poll is a single
-     request and finishes faster than the eye registers, so "Check now" on a quiet
-     account would repaint to exactly the icon it started from and look like it
-     did nothing at all. The background poll gets no floor: nobody is watching it,
-     and delaying the count there would be a cost with no reader.
+     A warm steady-state poll is a single request and finishes faster than the eye
+     registers. Shown and withdrawn inside that window the spinner reads as a
+     glitch rather than as work, so it is governed at both ends: DELAY_MS before a
+     background check may show it at all, and HOLD_MS that it stays up for once it
+     does. A check the user asked for skips the delay, because on a quiet account
+     the spinner is the only sign that anything happened, but it keeps the floor.
 
-     Module scope for the same reason as check.running: it need only hold for the
-     life of one worker invocation, and a value surviving a teardown would be
-     worse than none. */
+     heldUntil is module scope for the same reason as check.running: it need only
+     hold for the life of one worker invocation, and a value surviving a teardown
+     would be worse than none. */
+  DELAY_MS: 500,
   HOLD_MS: 400,
   heldUntil: 0,
+
+  /* How long a new-mail arrival keeps the newmail icon before settling back to
+     connected. Long enough to catch the eye from across the desk, short enough
+     that the button is not lying about the current state a moment later. */
+  FLASH_MS: 3000,
 
   /* The manifest is the single source of truth for the name, so renaming the
      extension is a one-line change there rather than a hunt through tooltips. */
@@ -107,16 +115,31 @@ const button = {
   },
 
   async loggedOut(reason) {
-    await button.icon('gray');
+    await button.icon('error');
     await button.badge('!', button.AMBER);
     await button.label(button.APP + '\n' + (reason || 'Not connected. Open options to add an API token.'));
   },
 
-  async checking(hold) {
-    await button.icon('load');
-    // Started once the spinner is actually up, so the floor measures what the
-    // user sees rather than what we asked for.
-    button.heldUntil = hold ? Date.now() + button.HOLD_MS : 0;
+  /* Put the spinner up now. Whether to call this at once or only after DELAY_MS
+     is check.run's decision, since the flag saying a check is still in flight
+     lives there.
+
+     Clearing the hold first stops icon() waiting on a previous one and delaying
+     the very state it is about to be asked to show; arming it afterwards starts
+     the floor from when the spinner is actually on screen rather than from when
+     we asked for it. */
+  async checking() {
+    button.heldUntil = 0;
+    await button.icon('checking');
+    button.heldUntil = Date.now() + button.HOLD_MS;
+  },
+
+  /* Nothing fetched yet in this browser session. Distinct from `connected` with
+     an empty inbox, which is a real answer rather than the absence of one. */
+  async idle() {
+    await button.icon('idle');
+    await button.badge('');
+    await button.label(button.APP + '\nStarting up...');
   },
 
   /* Tooltip body, given the per-folder breakdown.
@@ -148,19 +171,23 @@ const button = {
     return prefs.watchInbox !== false || ((prefs.watchFolders || []).length > 0);
   },
 
-  async render({count, breakdown, username, prefs, flash}) {
+  /* `error` paints the failed icon while leaving the count and the breakdown
+     alone: a check that could not complete says nothing about how much mail is
+     waiting, and blanking the badge would throw away the last good answer. The
+     caller writes the tooltip afterwards to say what went wrong. */
+  async render({count, breakdown, username, prefs, flash, error}) {
     if (count > 0) {
-      await button.icon(flash ? 'new' : 'red');
+      await button.icon(error ? 'error' : (flash ? 'newmail' : 'connected'));
       await button.badge(prefs.badge ? button.format(count) : '', prefs.badgeColor);
       await button.label(button.APP + '\n' + username + '\n' +
                          button.summary(count, breakdown));
       return;
     }
-    await button.icon('gray');
+    await button.icon(error ? 'error' : 'connected');
     await button.badge('');
     /* Deliberately not the amber "!" -- that means the token is dead. This is a
        working connection watching nothing, which is a choice the user made and can
-       undo, so it gets the ordinary idle icon and an explanatory tooltip. */
+       undo, so it gets the ordinary connected icon and an explanatory tooltip. */
     await button.label(button.APP + '\n' + username + '\n' + (button.watching(prefs)
       ? 'No unread mail'
       : 'No folders are being watched. Open options to choose some.'));

@@ -373,8 +373,10 @@ console.log('\n17. review #5: a transient failure leaves a steady icon, not the 
 
   const icons = calls.filter(c => c[0] === 'icon').map(c => c[1]);
   ok('an icon was set after the failure', icons.length > 0);
-  ok('and it is not left on the loading spinner',
-     !/\/load\//.test(icons[icons.length - 1]), 'icons: ' + JSON.stringify(icons));
+  ok('and it is not left on the spinner',
+     !/\/checking\//.test(icons[icons.length - 1]), 'icons: ' + JSON.stringify(icons));
+  ok('it says the check failed', /\/error\//.test(icons[icons.length - 1]),
+     'icons: ' + JSON.stringify(icons));
   ok('the last known count survived', (await ctx.state.count()) === 1);
   ok('the tooltip explains', calls.some(c => c[0] === 'title' && /Last check failed/.test(c[1])));
 }
@@ -1338,6 +1340,107 @@ console.log('\n45. middle-clicking the toolbar button checks now');
   ok('a middle click on a dead-token button still says so on the badge',
      calls.some(c => c[0] === 'title' && /token|sign|option/i.test(String(c[1]))),
      JSON.stringify(calls));
+}
+
+console.log('\n46. the icon states');
+{
+  const fs2 = require('fs');
+  const names = ['idle', 'checking', 'connected', 'newmail', 'error'];
+  /* Every state the code can ask for must have all four sizes on disk. A missing
+     set is invisible until the button is actually in that state, which for the
+     error icon means the day something has already gone wrong. */
+  const missing = [];
+  for (const n of names) {
+    for (const size of [16, 32, 48, 128]) {
+      const f = 'data/icons/' + n + '/' + size + '.png';
+      if (!fs2.existsSync(require('path').join(__dirname, '..', f))) {
+        missing.push(f);
+      }
+    }
+  }
+  eq('every icon state has a full set of sizes', missing, []);
+
+  const iconsIn = calls => calls.filter(c => c[0] === 'icon').map(c => c[1].split('/')[3]);
+
+  {
+    // No token at all: the first thing the button says is that it cannot work.
+    const server = {token: 'good', requests: [], sets: [], unread: []};
+    const calls = [];
+    const ctx = load(server, calls, {worker: true});
+    await new Promise(r => setTimeout(r, 20));
+    ok('a cold worker with nothing fetched shows idle',
+       iconsIn(calls).includes('idle'), JSON.stringify(iconsIn(calls)));
+
+    calls.length = 0;
+    await ctx.check.execute('alarm');
+    await settle(ctx);
+    eq('and a check with no token shows the error icon', iconsIn(calls), ['error']);
+    ok('with the amber "!" badge, since the token is the part the user can fix',
+       calls.some(c => c[0] === 'badge' && c[1] === '!'), JSON.stringify(calls));
+  }
+
+  {
+    const server = {token: 'good', requests: [], sets: [], unread: []};
+    const calls = [];
+    const ctx = load(server, calls);
+    await ctx.__api.storage.local.set({token: 'good'});
+
+    calls.length = 0;
+    await ctx.check.execute('alarm');
+    await settle(ctx);
+    ok('a fast background poll never shows the spinner at all',
+       !iconsIn(calls).includes('checking'), JSON.stringify(iconsIn(calls)));
+    eq('it goes straight to connected', iconsIn(calls), ['connected']);
+
+    calls.length = 0;
+    await ctx.check.execute('menu');
+    await settle(ctx);
+    eq('a check the user asked for shows it even though the poll is just as fast',
+       iconsIn(calls), ['checking', 'connected']);
+  }
+
+  {
+    /* The other half of the rule: a background poll slow enough to be worth
+       reporting does get the spinner. */
+    const server = {token: 'good', requests: [], sets: [], unread: []};
+    const calls = [];
+    const ctx = load(server, calls);
+    await ctx.__api.storage.local.set({token: 'good'});
+    await ctx.check.execute('seed');
+    await settle(ctx);
+
+    const quick = ctx.fetch;
+    ctx.fetch = async (...args) => {
+      await new Promise(r => setTimeout(r, ctx.button.DELAY_MS + 200));
+      return quick(...args);
+    };
+    calls.length = 0;
+    await ctx.check.execute('alarm');
+    await settle(ctx);
+    await new Promise(r => setTimeout(r, ctx.button.HOLD_MS + 50));
+    eq('a slow background poll shows the spinner, then the result',
+       iconsIn(calls), ['checking', 'connected']);
+  }
+
+  {
+    // New mail flashes, then settles back rather than staying flashed.
+    const server = {token: 'good', requests: [], sets: [],
+                    unread: [email('E1', 'a@x.com', 'Subject', 1)]};
+    const calls = [];
+    const ctx = load(server, calls);
+    ctx.button.FLASH_MS = 30;   // the real one is three seconds
+    await ctx.__api.storage.local.set({token: 'good', lastCheckAt: Date.now() - 1000});
+    calls.length = 0;
+    await ctx.check.execute('alarm');
+    await settle(ctx);
+    ok('mail arriving shows the newmail icon',
+       iconsIn(calls).includes('newmail'), JSON.stringify(iconsIn(calls)));
+    await new Promise(r => setTimeout(r, 80));
+    eq('and it settles back to connected rather than staying flashed',
+       iconsIn(calls)[iconsIn(calls).length - 1], 'connected');
+    ok('the count is on the badge, which is what says how much mail there is',
+       calls.some(c => c[0] === 'badge' && c[1] === '1'), JSON.stringify(calls));
+  }
 }
 
 }

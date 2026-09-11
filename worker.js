@@ -296,9 +296,17 @@ api.runtime.onMessage.addListener((request, sender, respond) => {
   const count = await state.count();
   await syncPopup();
   if (count === state.UNAUTHENTICATED) {
-    return;   // leave the logged-out badge alone
+    return;   // leave the error badge alone
   }
   const session = await state.session();
+  /* No session means nothing has been fetched since the browser started, so
+     there is no state to restore and the button says so rather than claiming a
+     connection it has not made yet. Session storage dying with the browser is
+     what makes this the startup test; a worker torn down and restarted mid-
+     session still finds one and repaints the real answer below. */
+  if (!session) {
+    return button.idle();
+  }
   await button.render({
     count,
     breakdown: await state.breakdown(),

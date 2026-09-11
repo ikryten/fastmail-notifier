@@ -96,6 +96,10 @@ const check = {
      do not, since the popup already shows the result of those. */
   MANUAL: ['manual', 'menu', 'middle-click'],
 
+  /* Bumped once per run, so a timer armed by one poll can tell whether it is
+     still the poll in flight. Module scope on the same terms as running. */
+  runs: 0,
+
   async execute(reason) {
     if (check.running) {
       check.pending = true;
@@ -131,7 +135,29 @@ const check = {
       return;
     }
 
-    await button.checking(check.MANUAL.includes(reason));
+    /* A check the user asked for shows the spinner at once: they are watching,
+       and on a quiet account it is the only sign anything happened. A background
+       poll arms a timer instead and shows it only if the check is still running
+       when that fires, which a warm single-request poll usually is not.
+
+       No cancel to keep track of. check.running is already the flag for "a check
+       is in flight", and execute() clears it whatever happens, including the
+       paths that return early or throw -- which a cancel function would have to
+       be threaded through one by one. */
+    if (check.MANUAL.includes(reason)) {
+      await button.checking();
+    }
+    else {
+      const mine = ++check.runs;
+      setTimeout(() => {
+        /* Tied to this run rather than to "some check is running": a timer armed
+           by an earlier, faster poll would otherwise paint the spinner over a
+           later one it knows nothing about, well before that one's own delay. */
+        if (check.running && check.runs === mine) {
+          button.checking();
+        }
+      }, button.DELAY_MS);
+    }
 
     let prefs = await state.prefs();
 
@@ -239,7 +265,7 @@ const check = {
       }
       await check.notify(fresh, prefs, mailboxes, watchlist.length > 1);
       // Settle back to the steady-state icon after the flash.
-      setTimeout(() => paint(false), 2500);
+      setTimeout(() => paint(false), button.FLASH_MS);
     }
 
     // Wake any open popup.
@@ -286,16 +312,19 @@ const check = {
       await button.loggedOut(e.message);
       return;
     }
-    // Restore the steady-state icon before the tooltip: run() switched it to the
-    // spinner on the way in, and leaving it there makes a one-off network blip
-    // look like a check that never finishes.
+    /* Repaint before writing the tooltip: run() may have switched the button to
+       the spinner on the way in, and leaving it there makes a one-off network
+       blip look like a check that never finishes. The count survives -- a check
+       that did not complete says nothing about how much mail is waiting -- but
+       the icon says the last attempt failed. */
     const session = await state.session();
     await button.render({
       count,
       breakdown: await state.breakdown(),
       username: (session && session.username) || '',
       prefs: await state.prefs(),
-      flash: false
+      flash: false,
+      error: true
     });
     await button.label(button.APP + '\nLast check failed: ' + e.message);
   },

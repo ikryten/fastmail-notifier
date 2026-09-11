@@ -10,9 +10,6 @@
 module.exports = {
   ignoreFiles: [
     'test', 'tools', 'docs', 'node_modules', 'web-ext-artifacts',
-    // The icons the redesign replaced. Kept for comparison, not for shipping;
-    // git has them too, at the commit before the one that swapped them.
-    'data/icons/backup',
     'README.md', 'CLAUDE.md', 'updates.json',
     'package.json', 'package-lock.json', 'web-ext-config.cjs',
     '.amo-upload-uuid', '.gitignore'

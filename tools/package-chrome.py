@@ -30,10 +30,6 @@ OUT = ROOT / 'web-ext-artifacts'
 INCLUDE = ['manifest.json', 'worker.js', 'LICENSE']
 INCLUDE_DIRS = ['core', 'data']
 
-# Superseded icons, kept in the tree for comparison. web-ext-config.cjs drops
-# them from the Firefox package for the same reason.
-EXCLUDE_DIRS = ['data/icons/backup']
-
 
 def chrome_manifest():
     m = json.loads((ROOT / 'manifest.json').read_text())
@@ -54,9 +50,8 @@ def main():
                 z.write(ROOT / name, name)
         for d in INCLUDE_DIRS:
             for f in sorted((ROOT / d).rglob('*')):
-                rel = f.relative_to(ROOT).as_posix()
-                if f.is_file() and not any(rel.startswith(x + '/') for x in EXCLUDE_DIRS):
-                    z.write(f, rel)
+                if f.is_file():
+                    z.write(f, f.relative_to(ROOT).as_posix())
 
     print(f'wrote {target.relative_to(ROOT)}')
     print(f'  permissions: {m["permissions"]}')

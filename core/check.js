@@ -90,6 +90,12 @@ const check = {
      the reset fired by a token change is exactly such a request. */
   pending: false,
 
+  /* The checks a person asked for and is watching happen: the popup's refresh
+     button, the context menu item, and a middle click on the toolbar button.
+     These hold the spinner; the poll loop and the re-polls that follow a write
+     do not, since the popup already shows the result of those. */
+  MANUAL: ['manual', 'menu', 'middle-click'],
+
   async execute(reason) {
     if (check.running) {
       check.pending = true;
@@ -125,7 +131,7 @@ const check = {
       return;
     }
 
-    await button.checking();
+    await button.checking(check.MANUAL.includes(reason));
 
     let prefs = await state.prefs();
 

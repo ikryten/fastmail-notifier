@@ -18,6 +18,21 @@
 const button = {
   AMBER: '#f9ab00',
 
+  /* How long the spinner is held before anything may paint over it, and the
+     deadline it is holding until.
+
+     Only checks a person asked for set it. A warm steady-state poll is a single
+     request and finishes faster than the eye registers, so "Check now" on a quiet
+     account would repaint to exactly the icon it started from and look like it
+     did nothing at all. The background poll gets no floor: nobody is watching it,
+     and delaying the count there would be a cost with no reader.
+
+     Module scope for the same reason as check.running: it need only hold for the
+     life of one worker invocation, and a value surviving a teardown would be
+     worse than none. */
+  HOLD_MS: 400,
+  heldUntil: 0,
+
   /* The manifest is the single source of truth for the name, so renaming the
      extension is a one-line change there rather than a hunt through tooltips. */
   APP: api.runtime.getManifest().name,
@@ -32,6 +47,15 @@ const button = {
   },
 
   async icon(name) {
+    /* Every repaint enters here first, and render() awaits it before touching the
+       badge or the tooltip, so waiting here holds the whole repaint rather than
+       just the picture -- and it covers the failure paths too, where the
+       acknowledgement is worth at least as much. */
+    const left = button.heldUntil - Date.now();
+    if (left > 0) {
+      await new Promise(r => setTimeout(r, left));
+    }
+    button.heldUntil = 0;
     try {
       await api.action.setIcon({path: button.paths(name)});
     }
@@ -88,8 +112,11 @@ const button = {
     await button.label(button.APP + '\n' + (reason || 'Not connected. Open options to add an API token.'));
   },
 
-  async checking() {
+  async checking(hold) {
     await button.icon('load');
+    // Started once the spinner is actually up, so the floor measures what the
+    // user sees rather than what we asked for.
+    button.heldUntil = hold ? Date.now() + button.HOLD_MS : 0;
   },
 
   /* Tooltip body, given the per-folder breakdown.

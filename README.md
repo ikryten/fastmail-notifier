@@ -8,8 +8,8 @@ unread count, and a preview window you can flip through unread mail in.
 talks to Fastmail's public JMAP API with a token you create yourself.*
 
 ![The preview window: one unread message with its sender, subject, an Inbox folder
-chip and a "24 of 24" counter, above the rendered message body, with Mark read,
-Trash, Open and Inbox buttons along the bottom](docs/popup.png)
+chip and a "1 of 1" counter, above the rendered message body, with Mark read,
+Trash, Open, Inbox, refresh and settings buttons along the bottom](docs/popup.png)
 
 ## Install
 

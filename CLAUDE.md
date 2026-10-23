@@ -52,16 +52,20 @@ the repository, frozen, and the reasons are below.
    default is fifteen minutes, which a review queue overruns, and a timeout there
    looks like a failed submission when the upload in fact succeeded. Nothing is
    downloaded either, because a listed add-on is distributed by AMO rather than
-   from here. Release notes and any listing changes go in through the Developer
-   Hub.
+   from here. Listing changes go in through the Developer Hub. Release notes can
+   too, or `python3 tools/amo-release-notes.py "What changed."` sets them for the
+   manifest's version through the API, using the same two variables; with no
+   argument it shows the current ones. Either way works while the version is
+   still in the queue.
 
    `--amo-metadata=tools/amo-metadata.json` supplies the license, which AMO
    requires on every listed version and rejects the submission for omitting. It
    lives under `tools/` because that directory is already excluded from the
    package by `web-ext-config.cjs`; a new top-level file would have to be added
    to that list by hand or it would ship. Only the license goes in it, because
-   that is the part which never changes. Release notes are per-version and belong
-   in the Hub, where a stale value cannot be committed by accident.
+   that is the part which never changes. Release notes are per-version and are
+   set on AMO after submitting, where a stale value cannot be committed by
+   accident.
 5. `python3 tools/package-chrome.py` for the Web Store zip.
 
 There is no GitHub release step any more, and no hash to record anywhere. Tagging

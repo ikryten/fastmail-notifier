@@ -12,6 +12,7 @@ const view = {
   session: null,
   mailboxes: null,     // for the folder chip; null just means no chip
   bodies: new Map(),   // emailId -> sanitized srcdoc, for the life of this popup
+  shown: null,         // emailId the frame currently holds, so a repaint can skip it
   busy: false
 };
 
@@ -58,6 +59,7 @@ async function paint() {
     $('date').textContent = '';
     $('folder').hidden = true;
     $('body').removeAttribute('srcdoc');
+    view.shown = null;
     // Not "Inbox zero": the watched set may not include the inbox at all.
     overlay('All caught up.');
     return;
@@ -77,12 +79,19 @@ async function paint() {
 
   // Show the JMAP preview immediately, then swap in the real body when it lands.
   if (view.bodies.has(m.id)) {
-    $('body').srcdoc = view.bodies.get(m.id);
+    /* Every poll repaints the message already on screen. Assigning srcdoc again
+       reloads the frame, which throws the reader back to the top of a long
+       message, so a frame that already holds this one is left alone. */
+    if (view.shown !== m.id) {
+      $('body').srcdoc = view.bodies.get(m.id);
+      view.shown = m.id;
+    }
     overlay('');
     return;
   }
 
   $('body').removeAttribute('srcdoc');
+  view.shown = null;
   overlay(m.preview || 'Loading…');
 
   const wanted = m.id;
@@ -91,6 +100,7 @@ async function paint() {
     if (view.messages[view.index] && view.messages[view.index].id === wanted) {
       view.bodies.set(wanted, doc);
       $('body').srcdoc = doc;
+      view.shown = wanted;
       overlay('');
     }
   }

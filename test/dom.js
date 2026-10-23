@@ -616,6 +616,27 @@ async function pageForward(w, n) {
 }
 
 {
+  /* The same poll must not reload the frame either. Assigning srcdoc again, even
+     with identical markup, reloads it, and a reload starts at the top: anyone
+     partway down a long message was thrown back up on every poll. */
+  const stub = chromeStub();
+  const w = await popupPage(LIST, MBOX, 3, stub);
+  const frame = w.document.getElementById('body');
+  ok('the first message is in the frame', frame.hasAttribute('srcdoc'));
+
+  let writes = 0;
+  const watch = new w.MutationObserver(records => { writes += records.length; });
+  watch.observe(frame, {attributes: true, attributeFilter: ['srcdoc']});
+  await w.load();
+  await new Promise(r => setTimeout(r, 5));
+  eq('a poll leaves the frame of the message on screen alone', writes, 0);
+
+  await pageForward(w, 1);
+  ok('while paging to another message still replaces it', writes > 0);
+  watch.disconnect();
+}
+
+{
   // Acting on a message moves the place with it, so the next open is not stranded
   // on an id that no longer exists.
   const stub = chromeStub();
